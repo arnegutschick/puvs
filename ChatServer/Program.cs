@@ -31,7 +31,11 @@ internal class Program
 
                 return new LoginResponse(true, string.Empty);
             });
-
+            // --- RPC: Handle /time request ---
+            await bus.Rpc.RespondAsync<TimeRequest, TimeResponse>(request =>
+            {
+                return Task.FromResult(new TimeResponse(DateTime.Now));
+            });
             // --- Pub/Sub: Handle incoming commands from clients to submit a message ---
             await bus.PubSub.SubscribeAsync<SubmitMessageCommand>("chat_server_submit_message_subscription", async command =>
             {

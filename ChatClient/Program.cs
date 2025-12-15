@@ -55,6 +55,25 @@ internal class Program
             });
 
             // --- Main Loop to Send Messages ---
+//            while (true)
+//            {
+//                Console.Write("Your message: ");
+//                string input = Console.ReadLine() ?? string.Empty;
+//
+//                if (string.IsNullOrWhiteSpace(input)) continue;
+//
+//                if (input.Equals("/quit", StringComparison.OrdinalIgnoreCase))
+//                {
+//                    // Send logout notification
+//                    bus.PubSub.Publish(new LogoutRequest(username));
+//                    break; // Exit the loop
+//                }
+//
+//                SubmitMessageCommand command = new SubmitMessageCommand(username, input);
+//
+//                bus.PubSub.Publish(command);
+//            }
+            // --- Main Loop to Send Messages ---
             while (true)
             {
                 Console.Write("Your message: ");
@@ -69,10 +88,35 @@ internal class Program
                     break; // Exit the loop
                 }
 
-                SubmitMessageCommand command = new SubmitMessageCommand(username, input);
+                if (input.StartsWith("/"))
+                {
+                    // --- Handle commands ---
+                    switch (input.ToLower())
+                    {
+                        case "/help":
+                            // RPC-Request an den Server oder lokale Anzeige
+                            Console.WriteLine("Available commands: /help, /time, /quit");
+                            break;
 
-                bus.PubSub.Publish(command);
+                        case "/time":
+                            // Beispiel: RPC an den Server, um Server-Zeit abzufragen
+                            var serverTime = bus.Rpc.Request<TimeRequest, TimeResponse>(new TimeRequest());
+                            Console.WriteLine($"Server time: {serverTime.CurrentTime}");
+                            break;
+
+                        default:
+                            Console.WriteLine($"Unknown command: {input}");
+                            break;
+                    }
+                }
+                else
+                {
+                    // --- Normal message ---
+                    SubmitMessageCommand command = new SubmitMessageCommand(username, input);
+                    bus.PubSub.Publish(command);
+                }
             }
+
         }
         catch (Exception ex)
         {
