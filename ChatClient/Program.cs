@@ -5,7 +5,9 @@ namespace ChatClient;
 
 internal class Program
 {
-    private static void Main(string[] args)
+    private static TaskCompletionSource<string>? pendingInput;
+
+    private static async Task Main(string[] args)
     {
         try
         {
@@ -54,12 +56,52 @@ internal class Program
                 Console.Write("Your message: ");
             });
 
+            bus.PubSub.Subscribe<FileReceivedEvent>(subscriptionId, async file =>
+            {
+                if (file.Sender == username) return;
+
+                ClearCurrentConsoleLine();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine(
+                    $"File from {file.Sender}: {file.FileName} ({file.FileSizeBytes} bytes)"
+                );
+                Console.ResetColor();
+                Console.Write("Save file? (y/n): ");
+
+                pendingInput = new TaskCompletionSource<string>();
+
+                string answer = await pendingInput.Task;
+                pendingInput = null;
+                if (answer.Equals("y", StringComparison.OrdinalIgnoreCase))
+                {
+                    byte[] data = Convert.FromBase64String(file.ContentBase64);
+
+                    string targetDirectory = @"C:\Users\arneg\Downloads\Chat";
+                    Directory.CreateDirectory(targetDirectory);
+
+                    string filePath = Path.Combine(targetDirectory, file.FileName);
+                    await File.WriteAllBytesAsync(filePath, data);
+
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    ClearCurrentConsoleLine();
+                    Console.WriteLine($"Saved as '{filePath}'.");
+                    Console.ResetColor();
+                    Console.Write("Your message: ");
+                }
+            });
+
             // --- Main Loop to Send Messages ---
             while (true)
             {
                 Console.Write("Your message: ");
+
                 string input = Console.ReadLine() ?? string.Empty;
 
+                if (pendingInput != null)
+                {
+                    pendingInput.TrySetResult(input);
+                    continue;
+                }
                 if (string.IsNullOrWhiteSpace(input)) continue;
 
                 if (input.Equals("/quit", StringComparison.OrdinalIgnoreCase))
@@ -67,6 +109,32 @@ internal class Program
                     // Send logout notification
                     bus.PubSub.Publish(new LogoutRequest(username));
                     break; // Exit the loop
+                }
+
+                if (input.StartsWith("/sendfile ", StringComparison.OrdinalIgnoreCase))
+                {
+                    string path = input.Substring(10).Trim();
+
+                    if (!File.Exists(path))
+                    {
+                        Console.WriteLine("File does not exist.");
+                        continue;
+                    }
+
+                    FileInfo info = new FileInfo(path);
+                    if (info.Length > 1_000_000)
+                    {
+                        Console.WriteLine("File too large. Max 1 MB allowed.");
+                        continue;
+                    }
+
+                    byte[] bytes = await File.ReadAllBytesAsync(path);
+                    string base64 = Convert.ToBase64String(bytes);
+
+                    var fileSendCommand = new SendFileCommand(username, info.Name, base64, info.Length);
+                    bus.PubSub.Publish(fileSendCommand);
+                    Console.WriteLine($"File '{info.Name}' sent.");
+                    continue;
                 }
 
                 SubmitMessageCommand command = new SubmitMessageCommand(username, input);
