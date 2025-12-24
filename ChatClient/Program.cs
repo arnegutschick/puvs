@@ -31,9 +31,11 @@ internal class Program
 
             Console.Clear();
             Console.WriteLine($"Welcome, {username}! You are now in the chat. Type '/quit' to exit.");
+            Console.WriteLine("Use '/msg <username> <message>' to send private messages.");
             Console.WriteLine("-----------------------------------------------------------------");
             
             string subscriptionId = $"chat_client_{Guid.NewGuid()}";
+            string privateTopic = $"private_{username}";
 
             // --- Subscribe to Broadcasts (Chat Messages & User Notifications) ---
             bus.PubSub.Subscribe<BroadcastMessageEvent>(subscriptionId, message =>
@@ -54,6 +56,27 @@ internal class Program
                 Console.Write("Your message: ");
             });
 
+            // --- Subscribe to Private Messages (topic-based) ---
+            bus.PubSub.Subscribe<PrivateMessageEvent>(privateTopic, privateMessage =>
+            {
+                ClearCurrentConsoleLine();
+                Console.ForegroundColor = ConsoleColor.Magenta;
+                
+                if (privateMessage.IsOutgoing)
+                {
+                    // Message sent by this user - show as outgoing
+                    Console.WriteLine($"[privat an {privateMessage.RecipientUsername}] {privateMessage.Text}");
+                }
+                else
+                {
+                    // Message received from another user
+                    Console.WriteLine($"[privat von {privateMessage.SenderUsername}] {privateMessage.Text}");
+                }
+                
+                Console.ResetColor();
+                Console.Write("Your message: ");
+            }, config => config.WithTopic(privateTopic));
+
             // --- Main Loop to Send Messages ---
             while (true)
             {
@@ -67,6 +90,35 @@ internal class Program
                     // Send logout notification
                     bus.PubSub.Publish(new LogoutRequest(username));
                     break; // Exit the loop
+                }
+
+                // Handle private message command: /msg <recipient> <message>
+                if (input.StartsWith("/msg ", StringComparison.OrdinalIgnoreCase))
+                {
+                    string[] parts = input.Substring(5).Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+                    
+                    if (parts.Length < 2)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("Usage: /msg <username> <message>");
+                        Console.ResetColor();
+                        continue;
+                    }
+
+                    string recipientUsername = parts[0];
+                    string privateMessage = parts[1];
+
+                    if (recipientUsername.Equals(username, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("You cannot send a private message to yourself.");
+                        Console.ResetColor();
+                        continue;
+                    }
+
+                    SendPrivateMessageCommand privateCommand = new SendPrivateMessageCommand(username, recipientUsername, privateMessage);
+                    bus.PubSub.Publish(privateCommand);
+                    continue;
                 }
 
                 SubmitMessageCommand command = new SubmitMessageCommand(username, input);

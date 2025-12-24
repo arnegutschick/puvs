@@ -1,10 +1,17 @@
 using EasyNetQ;
 using Chat.Contracts;
+using System.Collections.Concurrent;
 
 namespace ChatServer;
 
 internal class Program
 {
+    /// <summary>
+    /// Thread-safe dictionary to track connected users.
+    /// Key: username, Value: subscription topic for private messages.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, string> ConnectedUsers = new();
+
     private static async Task Main(string[] args)
     {
         Console.WriteLine("ChatServer is starting...");
@@ -23,6 +30,10 @@ internal class Program
                 {
                     return new LoginResponse(false, "Username cannot be empty.");
                 }
+
+                // Track the user for private messaging
+                string privateTopic = $"private_{request.Username}";
+                ConnectedUsers.TryAdd(request.Username, privateTopic);
 
                 Console.WriteLine($"User '{request.Username}' logged in successfully.");
 
@@ -50,10 +61,54 @@ internal class Program
             {
                 Console.WriteLine($"Logout request for user: '{request.Username}'");
 
+                // Remove user from tracking
+                ConnectedUsers.TryRemove(request.Username, out _);
+
                 Console.WriteLine($"User '{request.Username}' logged out.");
                 // Announce the departure to all clients
                 await bus.PubSub.PublishAsync(new UserNotification($"*** User '{request.Username}' has left the chat. ***"));
+            });
 
+            // --- Pub/Sub: Handle Private Messages ---
+            await bus.PubSub.SubscribeAsync<SendPrivateMessageCommand>("chat_server_private_message_subscription", async command =>
+            {
+                Console.WriteLine($"Private message from '{command.SenderUsername}' to '{command.RecipientUsername}': '{command.Text}'");
+
+                // Validate the recipient exists
+                if (!ConnectedUsers.TryGetValue(command.RecipientUsername, out string? recipientTopic))
+                {
+                    // Send error notification back to sender
+                    string senderTopic = $"private_{command.SenderUsername}";
+                    PrivateMessageEvent errorEvent = new PrivateMessageEvent(
+                        "System",
+                        command.SenderUsername,
+                        $"User '{command.RecipientUsername}' is not online or does not exist.",
+                        false
+                    );
+                    await bus.PubSub.PublishAsync(errorEvent, senderTopic);
+                    Console.WriteLine($"Recipient '{command.RecipientUsername}' not found. Error sent to sender.");
+                    return;
+                }
+
+                // Send private message to recipient
+                PrivateMessageEvent recipientEvent = new PrivateMessageEvent(
+                    command.SenderUsername,
+                    command.RecipientUsername,
+                    command.Text,
+                    false
+                );
+                await bus.PubSub.PublishAsync(recipientEvent, recipientTopic);
+                Console.WriteLine($"Private message delivered to '{command.RecipientUsername}'.");
+
+                // Send confirmation copy to sender
+                string senderConfirmTopic = $"private_{command.SenderUsername}";
+                PrivateMessageEvent senderEvent = new PrivateMessageEvent(
+                    command.SenderUsername,
+                    command.RecipientUsername,
+                    command.Text,
+                    true // Mark as outgoing for sender display
+                );
+                await bus.PubSub.PublishAsync(senderEvent, senderConfirmTopic);
             });
 
             Console.WriteLine("Server is running. Press [Enter] to exit.");
