@@ -9,8 +9,6 @@ public class ChatLogic
     private readonly IBus _bus;
     private readonly Action<string> _appendMessageCallback;
     private readonly Func<FileReceivedEvent, Dialog> _showFileDialogCallback;
-
-    // Jetzt öffentlich lesbar
     public string Username { get; }
 
     public ChatLogic(IBus bus, string username, Action<string> appendMessageCallback, Func<FileReceivedEvent, Dialog> showFileDialogCallback)
