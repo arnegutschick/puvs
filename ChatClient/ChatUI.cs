@@ -142,11 +142,11 @@ public class ChatUI
     /// Adds a posted message to the message display field
     /// </summary>
     public void AppendMessage(string message)
-    {
-        _messagesView.Text += message + "\n";
-        _messagesView.MoveEnd();
+            {
+            _messagesView.Text += message + "\n";
+                _messagesView.MoveEnd();
     }
-
+    
     /// <summary>
     /// Custom dialog when user receives a sent file. Allows the user to save the sent file.
     /// </summary>

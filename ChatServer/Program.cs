@@ -12,6 +12,24 @@ internal class Program
     /// </summary>
     private static readonly ConcurrentDictionary<string, DateTime> ConnectedUsers = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Thread-safe dictionary to track user colors.
+    /// Key: username, Value: assigned color.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, string> UserColors = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Predefined color pool for users.
+    /// </summary>
+    private static readonly string[] ColorPool = new[]
+    {
+        "Blue", "Green", "Magenta", "Cyan", "Red", "Yellow", "DarkBlue",
+        "DarkGreen", "DarkMagenta", "DarkCyan", "DarkRed", "DarkYellow"
+    };
+    
+    private static int _colorIndex = 0;
+    private static readonly object _colorLock = new();
+
     private static async Task Main(string[] args)
     {
         Console.WriteLine("ChatServer is starting...");
@@ -41,13 +59,23 @@ internal class Program
                 if (!ConnectedUsers.TryAdd(username, DateTime.UtcNow))
                     return DenyLogin(username, "User is already logged in.");
 
-                Console.WriteLine($"User '{username}' logged in successfully.");
+                // Assign color cyclically from the pool
+                string assignedColor;
+                lock (_colorLock)
+                {
+                    assignedColor = ColorPool[_colorIndex % ColorPool.Length];
+                    _colorIndex++;
+                }
+                
+                UserColors[username] = assignedColor;
+
+                Console.WriteLine($"User '{username}' logged in successfully with color '{assignedColor}'.");
 
                 await bus.PubSub.PublishAsync(
                     new UserNotification($"*** User '{username}' has joined the chat. ***")
                 );
 
-                return new LoginResponse(true, string.Empty);
+                return new LoginResponse(true, string.Empty, assignedColor);
             });
 
             // --- Pub/Sub: Handle incoming commands from clients to submit a message ---
@@ -55,8 +83,11 @@ internal class Program
             {
                 Console.WriteLine($"Received message from '{command.Username}': '{command.Text}'");
 
+                // Get the user's assigned color
+                string userColor = UserColors.TryGetValue(command.Username, out var color) ? color : "White";
+
                 // Create the event that will be broadcast to all clients
-                BroadcastMessageEvent broadcastEvent = new BroadcastMessageEvent(command.Username, command.Text);
+                BroadcastMessageEvent broadcastEvent = new BroadcastMessageEvent(command.Username, command.Text, userColor);
 
                 // Broadcast the event to all clients
                 await bus.PubSub.PublishAsync(broadcastEvent);
@@ -70,6 +101,7 @@ internal class Program
 
                 // Remove user from tracking
                 ConnectedUsers.TryRemove(request.Username, out _);
+                UserColors.TryRemove(request.Username, out _);
 
                 Console.WriteLine($"User '{request.Username}' logged out.");
                 // Announce the departure to all clients
@@ -85,12 +117,16 @@ internal class Program
                 string recipientKey = command.RecipientUsername.Trim();
                 string senderTopic = $"private_{command.SenderUsername.ToLowerInvariant()}";
 
+                // Get sender's color
+                string senderColor = UserColors.TryGetValue(command.SenderUsername, out var color) ? color : "White";
+
                 if (!ConnectedUsers.TryGetValue(recipientKey, out DateTime heartBeat))
                 {
                     var errorEvent = new PrivateMessageEvent(
                         "System",
                         command.SenderUsername,
                         $"User '{command.RecipientUsername}' is not online or does not exist.",
+                        "Red",
                         false
                     );
 
@@ -104,6 +140,7 @@ internal class Program
                     command.SenderUsername,
                     command.RecipientUsername,
                     command.Text,
+                    senderColor,
                     false
                 );
 
@@ -116,11 +153,11 @@ internal class Program
                     command.SenderUsername,
                     command.RecipientUsername,
                     command.Text,
+                    senderColor,
                     true // Mark as outgoing for sender display
                 );
                 await bus.PubSub.PublishAsync(senderEvent, senderTopic);
             });
-
 
             await bus.PubSub.SubscribeAsync<SendFileCommand>("chat_server_file_subscription", async command =>
             {
@@ -132,7 +169,6 @@ internal class Program
                 var fileEvent = new FileReceivedEvent(command.Sender, command.FileName, command.ContentBase64, command.FileSizeBytes);
                 await bus.PubSub.PublishAsync(fileEvent);
             });
-
 
             await bus.PubSub.SubscribeAsync<Heartbeat>("chat_server_heartbeat", hb =>
             {
@@ -161,7 +197,6 @@ internal class Program
         Console.WriteLine("ChatServer is shutting down.");
     }
 
-
     /// <summary>
     /// Starts a background task that periodically checks for users who have timed out.
     /// Users who have not sent a heartbeat within the timeout period (30 seconds) 
@@ -186,6 +221,7 @@ internal class Program
                     {
                         if (ConnectedUsers.TryRemove(user.Key, out _))
                         {
+                            UserColors.TryRemove(user.Key, out _);
                             Console.WriteLine($"User '{user.Key}' timed out.");
 
                             await bus.PubSub.PublishAsync(
@@ -199,7 +235,6 @@ internal class Program
             }
         });
     }
-
 
     /// <summary>
     /// Helper method to generate a failed LoginResponse and log the reason to the console.
