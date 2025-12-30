@@ -8,7 +8,7 @@ internal class Program
 {
     /// <summary>
     /// Thread-safe dictionary to track connected users.
-    /// Key: username, Value: subscription topic for private messages.
+    /// Key: username, Value: timestamp that gets updated every 10 seconds to ensure the user is still active.
     /// </summary>
     private static readonly ConcurrentDictionary<string, DateTime> ConnectedUsers = new(StringComparer.OrdinalIgnoreCase);
 
@@ -25,34 +25,21 @@ internal class Program
             // --- RPC: Handle Login Requests ---
             await bus.Rpc.RespondAsync<LoginRequest, LoginResponse>(async request =>
             {
-                Console.WriteLine($"Login request for user: '{request.Username}'");
+                string username = request.Username?.Trim() ?? string.Empty;
+                Console.WriteLine($"Login request for user: '{username}'");
 
-                if (string.IsNullOrWhiteSpace(request.Username))
-                {
-                    return new LoginResponse(false, "Username cannot be empty.");
-                }
-
-                // Trim & validate single-word username
-                string username = request.Username.Trim();
+                if (string.IsNullOrWhiteSpace(username))
+                    return DenyLogin(username, "Username cannot be empty.");
 
                 if (username.Contains(' '))
-                {
-                    return new LoginResponse(false, "Username must be a single word (no spaces).");
-                }
+                    return DenyLogin(username, "Username must be a single word (no spaces).");
 
-                // Optional: allow only letters/numbers
                 if (!username.All(char.IsLetterOrDigit))
-                {
-                    return new LoginResponse(false, "Username may only contain letters and numbers.");
-                }
+                    return DenyLogin(username, "Username may only contain letters and numbers.");
 
-                // Try to register user
-                string privateTopic = $"private_{username.ToLowerInvariant()}";
-
-                if (!ConnectedUsers.TryAdd(username,DateTime.UtcNow))
-                {
-                    return new LoginResponse(false, $"Username '{username}' is already logged in.");
-                }
+                // Try to register user atomar
+                if (!ConnectedUsers.TryAdd(username, DateTime.UtcNow))
+                    return DenyLogin(username, "User is already logged in.");
 
                 Console.WriteLine($"User '{username}' logged in successfully.");
 
@@ -211,5 +198,18 @@ internal class Program
                 }
             }
         });
+    }
+
+
+    /// <summary>
+    /// Helper method to generate a failed LoginResponse and log the reason to the console.
+    /// </summary>
+    /// <param name="username">The username that attempted to log in.</param>
+    /// <param name="reason">The reason why the login was denied.</param>
+    /// <returns>A LoginResponse instance indicating failure, containing the provided reason.</returns>
+    private static LoginResponse DenyLogin(string username, string reason)
+    {
+        Console.WriteLine($"Login request for user '{username}' denied; {reason}");
+        return new LoginResponse(false, reason);
     }
 }
