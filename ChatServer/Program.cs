@@ -10,7 +10,7 @@ internal class Program
     /// Thread-safe dictionary to track connected users.
     /// Key: username, Value: subscription topic for private messages.
     /// </summary>
-    private static readonly ConcurrentDictionary<string, string> ConnectedUsers = new();
+    private static readonly ConcurrentDictionary<string, DateTime> ConnectedUsers = new(StringComparer.OrdinalIgnoreCase);
 
     private static async Task Main(string[] args)
     {
@@ -26,19 +26,39 @@ internal class Program
             await bus.Rpc.RespondAsync<LoginRequest, LoginResponse>(async request =>
             {
                 Console.WriteLine($"Login request for user: '{request.Username}'");
+
                 if (string.IsNullOrWhiteSpace(request.Username))
                 {
                     return new LoginResponse(false, "Username cannot be empty.");
                 }
 
-                // Track the user for private messaging
-                string privateTopic = $"private_{request.Username}";
-                ConnectedUsers.TryAdd(request.Username, privateTopic);
+                // Trim & validate single-word username
+                string username = request.Username.Trim();
 
-                Console.WriteLine($"User '{request.Username}' logged in successfully.");
+                if (username.Contains(' '))
+                {
+                    return new LoginResponse(false, "Username must be a single word (no spaces).");
+                }
 
-                // Announce the new user to all clients
-                await bus.PubSub.PublishAsync(new UserNotification($"*** User '{request.Username}' has joined the chat. ***"));
+                // Optional: allow only letters/numbers
+                if (!username.All(char.IsLetterOrDigit))
+                {
+                    return new LoginResponse(false, "Username may only contain letters and numbers.");
+                }
+
+                // Try to register user
+                string privateTopic = $"private_{username.ToLowerInvariant()}";
+
+                if (!ConnectedUsers.TryAdd(username,DateTime.UtcNow))
+                {
+                    return new LoginResponse(false, $"Username '{username}' is already logged in.");
+                }
+
+                Console.WriteLine($"User '{username}' logged in successfully.");
+
+                await bus.PubSub.PublishAsync(
+                    new UserNotification($"*** User '{username}' has joined the chat. ***")
+                );
 
                 return new LoginResponse(true, string.Empty);
             });
@@ -75,18 +95,20 @@ internal class Program
                 Console.WriteLine($"Private message from '{command.SenderUsername}' to '{command.RecipientUsername}': '{command.Text}'");
 
                 // Validate the recipient exists
-                if (!ConnectedUsers.TryGetValue(command.RecipientUsername, out string? recipientTopic))
+                string recipientKey = command.RecipientUsername.Trim();
+                string senderTopic = $"private_{command.SenderUsername.ToLowerInvariant()}";
+
+                if (!ConnectedUsers.TryGetValue(recipientKey, out DateTime heartBeat))
                 {
-                    // Send error notification back to sender
-                    string senderTopic = $"private_{command.SenderUsername}";
-                    PrivateMessageEvent errorEvent = new PrivateMessageEvent(
+                    var errorEvent = new PrivateMessageEvent(
                         "System",
                         command.SenderUsername,
                         $"User '{command.RecipientUsername}' is not online or does not exist.",
                         false
                     );
+
                     await bus.PubSub.PublishAsync(errorEvent, senderTopic);
-                    Console.WriteLine($"Recipient '{command.RecipientUsername}' not found. Error sent to sender.");
+                    Console.WriteLine($"Private message from '{command.SenderUsername}' couldn't be delivered; Recipient does not exist.");
                     return;
                 }
 
@@ -97,18 +119,19 @@ internal class Program
                     command.Text,
                     false
                 );
+
+                string recipientTopic = $"private_{command.RecipientUsername.ToLowerInvariant()}";
                 await bus.PubSub.PublishAsync(recipientEvent, recipientTopic);
                 Console.WriteLine($"Private message delivered to '{command.RecipientUsername}'.");
 
                 // Send confirmation copy to sender
-                string senderConfirmTopic = $"private_{command.SenderUsername}";
                 PrivateMessageEvent senderEvent = new PrivateMessageEvent(
                     command.SenderUsername,
                     command.RecipientUsername,
                     command.Text,
                     true // Mark as outgoing for sender display
                 );
-                await bus.PubSub.PublishAsync(senderEvent, senderConfirmTopic);
+                await bus.PubSub.PublishAsync(senderEvent, senderTopic);
             });
 
 
@@ -124,6 +147,19 @@ internal class Program
             });
 
 
+            await bus.PubSub.SubscribeAsync<Heartbeat>("chat_server_heartbeat", hb =>
+            {
+                ConnectedUsers.AddOrUpdate(
+                    hb.Username,
+                    _ => DateTime.UtcNow,
+                    (_, __) => DateTime.UtcNow
+                );
+
+                return Task.CompletedTask;
+            });
+
+            StartCleanupTask(bus);
+
             Console.WriteLine("Server is running. Press [Enter] to exit.");
             Console.ReadLine();
         }
@@ -136,5 +172,44 @@ internal class Program
         }
 
         Console.WriteLine("ChatServer is shutting down.");
+    }
+
+
+    /// <summary>
+    /// Starts a background task that periodically checks for users who have timed out.
+    /// Users who have not sent a heartbeat within the timeout period (30 seconds) 
+    /// are removed from the ConnectedUsers dictionary, and a 
+    /// UserNotification is published to inform other clients that 
+    /// the user has left the chat due to timeout.
+    /// </summary>
+    /// <param name="bus">The IBus instance used to publish notifications.</param>
+    private static void StartCleanupTask(IBus bus)
+    {
+        _ = Task.Run(async () =>
+        {
+            while (true)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(30));
+
+                DateTime now = DateTime.UtcNow;
+
+                foreach (var user in ConnectedUsers)
+                {
+                    if (now - user.Value > TimeSpan.FromSeconds(30))
+                    {
+                        if (ConnectedUsers.TryRemove(user.Key, out _))
+                        {
+                            Console.WriteLine($"User '{user.Key}' timed out.");
+
+                            await bus.PubSub.PublishAsync(
+                                new UserNotification(
+                                    $"*** User '{user.Key}' has left the chat (timeout). ***"
+                                )
+                            );
+                        }
+                    }
+                }
+            }
+        });
     }
 }
