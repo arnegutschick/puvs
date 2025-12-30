@@ -111,6 +111,19 @@ internal class Program
                 await bus.PubSub.PublishAsync(senderEvent, senderConfirmTopic);
             });
 
+
+            await bus.PubSub.SubscribeAsync<SendFileCommand>("chat_server_file_subscription", async command =>
+            {
+                Console.WriteLine(
+                    $"File received from '{command.Sender}': {command.FileName} ({command.FileSizeBytes} bytes)"
+                );
+
+                // Broadcast to all clients
+                var fileEvent = new FileReceivedEvent(command.Sender, command.FileName, command.ContentBase64, command.FileSizeBytes);
+                await bus.PubSub.PublishAsync(fileEvent);
+            });
+
+
             Console.WriteLine("Server is running. Press [Enter] to exit.");
             Console.ReadLine();
         }
