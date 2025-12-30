@@ -67,6 +67,10 @@ public class ChatUI
 
         // Import pub/sub message logic
         _logic.SubscribeEvents();
+        
+
+        // Start heartbeat Timer
+        _logic.StartHeartbeat();
 
         top.Add(win);
         Application.Run();
@@ -88,13 +92,19 @@ public class ChatUI
             return;
         }
 
+        // --- Quit chat ---
         if (text.Equals("/quit", StringComparison.OrdinalIgnoreCase))
         {
+            // Stop heartbeat
+            _logic.StopHeartbeat();
+
+            // End client application
             Application.RequestStop();
             e.Handled = true;
             return;
         }
 
+        // --- Send file ---
         if (text.StartsWith("/sendfile ", StringComparison.OrdinalIgnoreCase))
         {
             _logic.HandleSendFile(text.Substring(10).Trim());
@@ -102,6 +112,28 @@ public class ChatUI
             return;
         }
 
+        // --- Private message ---
+        if (text.StartsWith("/msg ", StringComparison.OrdinalIgnoreCase))
+        {
+            string payload = text.Substring(5).Trim();
+            string[] parts = payload.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+
+            if (parts.Length < 2)
+            {
+                AppendMessage("[ERROR] Usage: /msg <username> <message>");
+                e.Handled = true;
+                return;
+            }
+
+            string recipient = parts[0];
+            string message = parts[1];
+
+            _logic.SendPrivateMessage(recipient, message);
+            e.Handled = true;
+            return;
+        }
+
+        // --- Public message ---
         _logic.SendMessage(text);
         e.Handled = true;
     }
