@@ -9,9 +9,15 @@ public class ChatLogic
     private readonly IBus _bus;
     private readonly Action<string> _appendMessageCallback;
     private readonly Func<FileReceivedEvent, Dialog> _showFileDialogCallback;
+    private Timer? _heartbeatTimer;
+
     public string Username { get; }
 
-    public ChatLogic(IBus bus, string username, Action<string> appendMessageCallback, Func<FileReceivedEvent, Dialog> showFileDialogCallback)
+    public ChatLogic(
+        IBus bus,
+        string username,
+        Action<string> appendMessageCallback,
+        Func<FileReceivedEvent, Dialog> showFileDialogCallback)
     {
         _bus = bus;
         Username = username;
@@ -20,12 +26,14 @@ public class ChatLogic
     }
 
     /// <summary>
-    /// Handles all possible subscriptions of the chat client to receive one of many possible events.
+    /// Handles all subscriptions of the chat client (broadcast, notifications, files, private messages).
     /// </summary>
     public void SubscribeEvents()
     {
         string subscriptionId = $"chat_client_{Guid.NewGuid()}";
+        string privateTopic = $"private_{Username.ToLowerInvariant()}";
 
+        // --- Broadcast chat messages ---
         _bus.PubSub.Subscribe<BroadcastMessageEvent>(subscriptionId, msg =>
         {
             Application.MainLoop.Invoke(() =>
@@ -34,6 +42,7 @@ public class ChatLogic
             });
         });
 
+        // --- User notifications ---
         _bus.PubSub.Subscribe<UserNotification>(subscriptionId, note =>
         {
             Application.MainLoop.Invoke(() =>
@@ -42,21 +51,49 @@ public class ChatLogic
             });
         });
 
+        // --- File messages ---
         _bus.PubSub.Subscribe<FileReceivedEvent>(subscriptionId, file =>
         {
             if (file.Sender == Username) return;
 
             Application.MainLoop.Invoke(() =>
             {
-                _appendMessageCallback($"[FILE] {file.Sender}: {file.FileName} ({file.FileSizeBytes} bytes)");
+                _appendMessageCallback(
+                    $"[FILE] {file.Sender}: {file.FileName} ({file.FileSizeBytes} bytes)"
+                );
+
                 var dialog = _showFileDialogCallback(file);
                 Application.Run(dialog);
             });
         });
+
+        // --- Private messages (topic-based) ---
+        _bus.PubSub.Subscribe<PrivateMessageEvent>(
+            privateTopic,
+            privateMessage =>
+            {
+                Application.MainLoop.Invoke(() =>
+                {
+                    if (privateMessage.IsOutgoing)
+                    {
+                        _appendMessageCallback(
+                            $"[PRIVATE → {privateMessage.RecipientUsername}] {privateMessage.Text}"
+                        );
+                    }
+                    else
+                    {
+                        _appendMessageCallback(
+                            $"[PRIVATE ← {privateMessage.SenderUsername}] {privateMessage.Text}"
+                        );
+                    }
+                });
+            },
+            cfg => cfg.WithTopic(privateTopic)
+        );
     }
 
     /// <summary>
-    /// Sends a chat message to the server.
+    /// Sends a public chat message.
     /// </summary>
     public void SendMessage(string text)
     {
@@ -64,7 +101,28 @@ public class ChatLogic
     }
 
     /// <summary>
-    /// Ensures the sent file exists and is smaller than 1 MB in size. If so, sends the file to the server.
+    /// Sends a private message to another user.
+    /// </summary>
+    public void SendPrivateMessage(string recipientUsername, string text)
+    {
+        if (string.Equals(recipientUsername, Username, StringComparison.OrdinalIgnoreCase))
+        {
+            _appendMessageCallback("[ERROR] You cannot send a private message to yourself.");
+            return;
+        }
+
+        var command = new SendPrivateMessageCommand(
+            Username,
+            recipientUsername,
+            text
+        );
+
+        _bus.PubSub.Publish(command);
+
+    }
+
+    /// <summary>
+    /// Ensures the sent file exists and is smaller than 1 MB in size. If so, sends the file.
     /// </summary>
     public async void HandleSendFile(string path)
     {
@@ -84,12 +142,15 @@ public class ChatLogic
         byte[] bytes = await File.ReadAllBytesAsync(path);
         string base64 = Convert.ToBase64String(bytes);
 
-        _bus.PubSub.Publish(new SendFileCommand(Username, info.Name, base64, info.Length));
+        _bus.PubSub.Publish(
+            new SendFileCommand(Username, info.Name, base64, info.Length)
+        );
+
         _appendMessageCallback($"[YOU] Sent file {info.Name}");
     }
 
     /// <summary>
-    /// Saves a given file in the Downloads/Chat folder.
+    /// Saves a received file in Downloads/Chat.
     /// </summary>
     public async void SaveFile(FileReceivedEvent file)
     {
@@ -106,5 +167,26 @@ public class ChatLogic
         await File.WriteAllBytesAsync(path, data);
 
         _appendMessageCallback($"[SAVED] {path}");
+    }
+
+    /// <summary>
+    /// Starts sending periodic heartbeat messages to the server to indicate that this client is still online.
+    /// The heartbeat is sent every 10 seconds using a timer and Pub/Sub on the bus.
+    /// </summary>
+    public void StartHeartbeat()
+    {
+        _heartbeatTimer = new Timer(_ =>
+        {
+            _bus.PubSub.Publish(new Heartbeat(Username));
+        }, null, TimeSpan.Zero, TimeSpan.FromSeconds(10));
+    }
+
+    /// <summary>
+    /// Stops sending heartbeat messages by disposing the underlying timer.
+    /// Call this method when the client is logging out or the application is closing.
+    /// </summary>
+    public void StopHeartbeat()
+    {
+        _heartbeatTimer?.Dispose();
     }
 }
