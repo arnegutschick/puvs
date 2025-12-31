@@ -93,10 +93,55 @@ public class ChatLogic
     }
 
     /// <summary>
-    /// Sends a public chat message.
+    /// Sends a public chat message or handles commands like /statistik.
     /// </summary>
-    public void SendMessage(string text)
+    public async void SendMessage(string text)
     {
+        text ??= "";
+        var trimmed = text.Trim();
+
+        if (string.IsNullOrWhiteSpace(trimmed))
+            return;
+
+        // --- Command: /statistik ---
+        if (trimmed.Equals("/statistik", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var res = await _bus.Rpc.RequestAsync<StatisticsRequest, StatisticsResponse>(
+                    new StatisticsRequest(Username)
+                );
+
+                _appendMessageCallback("=== Statistics ===");
+                _appendMessageCallback($"Total Messages: {res.TotalMessages}");
+                _appendMessageCallback($"Ø Messages per User: {res.AvgMessagesPerUser:F2}");
+                _appendMessageCallback("Top 3 most active Chatters:");
+
+                if (res.Top3 == null || res.Top3.Count == 0)
+                {
+                    _appendMessageCallback("  (currently no data)");
+                }
+                else
+                {
+                    int rank = 1;
+                    foreach (var t in res.Top3)
+                    {
+                        _appendMessageCallback($"  {rank}. {t.User}: {t.Messages}");
+                        rank++;
+                    }
+                }
+
+                _appendMessageCallback("================");
+            }
+            catch (Exception ex)
+            {
+                _appendMessageCallback($"[ERROR] Statistics couldn't be fetched: {ex.Message}");
+            }
+
+            return;
+        }
+
+        // --- Normal message ---
         _bus.PubSub.Publish(new SubmitMessageCommand(Username, text));
     }
 
