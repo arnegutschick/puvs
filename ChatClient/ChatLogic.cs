@@ -133,6 +133,28 @@ public class ChatLogic
 
 
     /// <summary>
+    /// Sends a request to the server to retrieve the current server time
+    /// and displays it in the chat UI. If the request fails, an error
+    /// message is appended instead.
+    /// </summary>
+    /// <returns>A Task representing the asynchronous operation.</returns>
+    public async Task HandleTimeCommand()
+    {
+        try
+        {
+            var res = await _bus.Rpc.RequestAsync<TimeRequest, TimeResponse>(new TimeRequest());
+            _appendMessageCallback($"[INFO] Current server time: {res.CurrentTime}", "Black");
+        }
+        catch (Exception ex)
+        {
+            _appendMessageCallback(
+                $"[ERROR] Time couldn't be fetched: {ex.Message}", "red"
+            );
+        }
+    }
+
+
+    /// <summary>
     /// Handles the <c>/statistik</c> command by requesting chat statistics
     /// from the server and printing the result to the chat output.
     /// </summary>
