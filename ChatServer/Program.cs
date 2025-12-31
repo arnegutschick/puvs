@@ -73,16 +73,10 @@ internal class Program
 
                 var text = command.Text?.Trim() ?? "";
 
-                if (text.Equals("/statistik", StringComparison.OrdinalIgnoreCase))
-                {
-                    Console.WriteLine("'/statistik' came through SubmitMessageCommand - ignoring (use RPC).");
-                    return;
-                }
-
                 if (!text.StartsWith("/")) Stats.RecordMessage(command.Username);
 
                 // Create the event that will be broadcast to all clients
-                BroadcastMessageEvent broadcastEvent = new BroadcastMessageEvent(command.Username, command.Text);
+                BroadcastMessageEvent broadcastEvent = new BroadcastMessageEvent(command.Username, text);
 
                 // Broadcast the event to all clients
                 await bus.PubSub.PublishAsync(broadcastEvent);
