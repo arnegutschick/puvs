@@ -5,7 +5,8 @@ namespace ChatClient;
 public class ChatUI
 {
     private readonly ChatLogic _logic;
-    private TextView _messagesView = null!;
+    private ScrollView _messagesScroll = null!;
+    private int _messageCount = 0;
     private TextField _inputField = null!;
 
     public ChatUI(ChatLogic logic)
@@ -32,21 +33,21 @@ public class ChatUI
         };
 
         // Declare view for text messages
-        _messagesView = new TextView
+        _messagesScroll = new ScrollView
         {
             X = 0,
             Y = 0,
             Width = Dim.Fill(),
             Height = Dim.Fill() - inputFrameHeight,
-            ReadOnly = true,
-            WordWrap = true
+            ShowVerticalScrollIndicator = true,
+            ColorScheme = new ColorScheme { Normal = Application.Driver.MakeAttribute(Color.Black, Color.White) },
         };
 
         // Declare message input field
         var inputFrame = new FrameView("Your Message")
         {
             X = 0,
-            Y = Pos.Bottom(_messagesView),
+            Y = Pos.Bottom(_messagesScroll),
             Width = Dim.Fill(),
             Height = inputFrameHeight
         };
@@ -59,7 +60,7 @@ public class ChatUI
         };
 
         inputFrame.Add(_inputField);
-        win.Add(_messagesView, inputFrame);
+        win.Add(_messagesScroll, inputFrame);
 
         // set focus to input field while typing
         _inputField.KeyPress += OnInputKeyPress;
@@ -128,7 +129,7 @@ public class ChatUI
 
             if (parts.Length < 2)
             {
-                AppendMessage("[ERROR] Usage: /msg <username> <message>");
+                AppendMessage("[ERROR] Usage: /msg <username> <message>", "red");
                 e.Handled = true;
                 return;
             }
@@ -146,10 +147,25 @@ public class ChatUI
     /// <summary>
     /// Adds a posted message to the message display field
     /// </summary>
-    public void AppendMessage(string message)
-            {
-            _messagesView.Text += message + "\n";
-                _messagesView.MoveEnd();
+    public void AppendMessage(string message, string colorName)
+    {
+        var color = MapColor(colorName);
+        var attr = Application.Driver.MakeAttribute(color, Color.White);
+        var cs = new ColorScheme { Normal = attr };
+
+        var label = new Label(message)
+        {
+            X = 0,
+            Y = _messageCount,
+            Width = message.Length
+        };
+        label.ColorScheme = cs;
+
+        _messagesScroll.Add(label);
+        _messageCount++;
+
+        _messagesScroll.ContentSize = new Size(Math.Max(_messagesScroll.ContentSize.Width, message.Length), _messageCount);
+        _messagesScroll.SetNeedsDisplay();
     }
     
     /// <summary>
@@ -177,5 +193,26 @@ public class ChatUI
 
         dialog.Add(label, yesButton, noButton);
         return dialog;
+    }
+
+    private static Color MapColor(string name)
+    {
+        return name?.ToLowerInvariant() switch
+        {
+            "blue" => Color.Blue,
+            "green" => Color.Green,
+            "magenta" => Color.Magenta,
+            "cyan" => Color.Cyan,
+            "red" => Color.Red,
+            "brown" => Color.Brown,
+            "brightmagenta" => Color.BrightMagenta,
+            "brightred" => Color.BrightRed,
+            "brightblue" => Color.BrightBlue,
+            "brightcyan" => Color.BrightCyan,
+            "brightgreen" => Color.BrightGreen,
+            "brightyellow" => Color.BrightYellow,
+            "black" => Color.Black,
+            _ => Color.White
+        };
     }
 }

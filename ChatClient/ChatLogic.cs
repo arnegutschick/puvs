@@ -7,7 +7,7 @@ namespace ChatClient;
 public class ChatLogic
 {
     private readonly IBus _bus;
-    private readonly Action<string> _appendMessageCallback;
+    private readonly Action<string, string> _appendMessageCallback;
     private readonly Func<FileReceivedEvent, Dialog> _showFileDialogCallback;
     private Timer? _heartbeatTimer;
 
@@ -16,7 +16,7 @@ public class ChatLogic
     public ChatLogic(
         IBus bus,
         string username,
-        Action<string> appendMessageCallback,
+        Action<string, string> appendMessageCallback,
         Func<FileReceivedEvent, Dialog> showFileDialogCallback)
     {
         _bus = bus;
@@ -38,7 +38,7 @@ public class ChatLogic
         {
             Application.MainLoop.Invoke(() =>
             {
-                _appendMessageCallback($"{msg.Username}: {msg.Text}");
+                _appendMessageCallback($"{msg.Username}: {msg.Text}", msg.UserColor);
             });
         });
 
@@ -47,7 +47,7 @@ public class ChatLogic
         {
             Application.MainLoop.Invoke(() =>
             {
-                _appendMessageCallback($"[INFO] {note.Text}");
+                _appendMessageCallback($"[INFO] {note.Text}", "Black");
             });
         });
 
@@ -59,7 +59,8 @@ public class ChatLogic
             Application.MainLoop.Invoke(() =>
             {
                 _appendMessageCallback(
-                    $"[FILE] {file.Sender}: {file.FileName} ({file.FileSizeBytes} bytes)"
+                    $"[FILE] {file.Sender}: {file.FileName} ({file.FileSizeBytes} bytes)",
+                    "BrightGreen"
                 );
 
                 var dialog = _showFileDialogCallback(file);
@@ -77,13 +78,15 @@ public class ChatLogic
                     if (privateMessage.IsOutgoing)
                     {
                         _appendMessageCallback(
-                            $"[PRIVATE → {privateMessage.RecipientUsername}] {privateMessage.Text}"
+                            $"[PRIVATE → {privateMessage.RecipientUsername}] {privateMessage.Text}",
+                            privateMessage.UserColor
                         );
                     }
                     else
                     {
                         _appendMessageCallback(
-                            $"[PRIVATE ← {privateMessage.SenderUsername}] {privateMessage.Text}"
+                            $"[PRIVATE ← {privateMessage.SenderUsername}] {privateMessage.Text}",
+                            privateMessage.UserColor
                         );
                     }
                 });
@@ -103,44 +106,6 @@ public class ChatLogic
         if (string.IsNullOrWhiteSpace(trimmed))
             return;
 
-        // --- Command: /statistik ---
-        if (trimmed.Equals("/statistik", StringComparison.OrdinalIgnoreCase))
-        {
-            try
-            {
-                var res = await _bus.Rpc.RequestAsync<StatisticsRequest, StatisticsResponse>(
-                    new StatisticsRequest(Username)
-                );
-
-                _appendMessageCallback("=== Statistics ===");
-                _appendMessageCallback($"Total Messages: {res.TotalMessages}");
-                _appendMessageCallback($"Ø Messages per User: {res.AvgMessagesPerUser:F2}");
-                _appendMessageCallback("Top 3 most active Chatters:");
-
-                if (res.Top3 == null || res.Top3.Count == 0)
-                {
-                    _appendMessageCallback("  (currently no data)");
-                }
-                else
-                {
-                    int rank = 1;
-                    foreach (var t in res.Top3)
-                    {
-                        _appendMessageCallback($"  {rank}. {t.User}: {t.Messages}");
-                        rank++;
-                    }
-                }
-
-                _appendMessageCallback("================");
-            }
-            catch (Exception ex)
-            {
-                _appendMessageCallback($"[ERROR] Statistics couldn't be fetched: {ex.Message}");
-            }
-
-            return;
-        }
-
         // --- Normal message ---
         _bus.PubSub.Publish(new SubmitMessageCommand(Username, text));
     }
@@ -152,7 +117,7 @@ public class ChatLogic
     {
         if (string.Equals(recipientUsername, Username, StringComparison.OrdinalIgnoreCase))
         {
-            _appendMessageCallback("[ERROR] You cannot send a private message to yourself.");
+            _appendMessageCallback("[ERROR] You cannot send a private message to yourself.", "red");
             return;
         }
 
@@ -184,31 +149,31 @@ public class ChatLogic
                     new StatisticsRequest(Username)
                 );
 
-            _appendMessageCallback("=== Statistics ===");
-            _appendMessageCallback($"Total Messages: {res.TotalMessages}");
-            _appendMessageCallback($"Ø Messages per User: {res.AvgMessagesPerUser:F2}");
-            _appendMessageCallback("Top 3 most active Chatters:");
+            _appendMessageCallback("=== Statistics ===", "Black");
+            _appendMessageCallback($"Total Messages: {res.TotalMessages}", "Black");
+            _appendMessageCallback($"Ø Messages per User: {res.AvgMessagesPerUser:F2}", "Black");
+            _appendMessageCallback("Top 3 most active Chatters:", "Black");
 
             if (res.Top3 == null || res.Top3.Count == 0)
             {
-                _appendMessageCallback("  (currently no data)");
+                _appendMessageCallback("  (currently no data)", "Black");
             }
             else
             {
                 int rank = 1;
                 foreach (var t in res.Top3)
                 {
-                    _appendMessageCallback($"  {rank}. {t.User}: {t.Messages}");
+                    _appendMessageCallback($"  {rank}. {t.User}: {t.Messages}", "Black");
                     rank++;
                 }
             }
 
-            _appendMessageCallback("================");
+            _appendMessageCallback("================", "Black");
         }
         catch (Exception ex)
         {
             _appendMessageCallback(
-                $"[ERROR] Statistics couldn't be fetched: {ex.Message}"
+                $"[ERROR] Statistics couldn't be fetched: {ex.Message}", "red"
             );
         }
     }
@@ -221,14 +186,14 @@ public class ChatLogic
     {
         if (!File.Exists(path))
         {
-            _appendMessageCallback("[ERROR] File does not exist.");
+            _appendMessageCallback("[ERROR] File does not exist.", "red");
             return;
         }
 
         var info = new FileInfo(path);
         if (info.Length > 1_000_000)
         {
-            _appendMessageCallback("[ERROR] File too large (max 1 MB).");
+            _appendMessageCallback("[ERROR] File too large (max 1 MB).", "red");
             return;
         }
 
@@ -239,7 +204,7 @@ public class ChatLogic
             new SendFileCommand(Username, info.Name, base64, info.Length)
         );
 
-        _appendMessageCallback($"[YOU] Sent file {info.Name}");
+        _appendMessageCallback($"[YOU] Sent file {info.Name}", "BrightGreen");
     }
 
 
@@ -260,7 +225,7 @@ public class ChatLogic
         string path = Path.Combine(dir, file.FileName);
         await File.WriteAllBytesAsync(path, data);
 
-        _appendMessageCallback($"[SAVED] {path}");
+        _appendMessageCallback($"[SAVED] {path}", "BrightGreen");
     }
 
 
