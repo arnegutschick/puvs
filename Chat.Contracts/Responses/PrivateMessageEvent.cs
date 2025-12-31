@@ -7,5 +7,6 @@ namespace Chat.Contracts;
 /// <param name="SenderUsername">The username of the message sender.</param>
 /// <param name="RecipientUsername">The username of the message recipient.</param>
 /// <param name="Text">The content of the private message.</param>
+/// <param name="UserColor">The color associated with the user.</param>
 /// <param name="IsOutgoing">True if this is a copy sent back to the sender for confirmation.</param>
-public record PrivateMessageEvent(string SenderUsername, string RecipientUsername, string Text, bool IsOutgoing = false);
+public record PrivateMessageEvent(string SenderUsername, string RecipientUsername, string Text, string UserColor, bool IsOutgoing = false);

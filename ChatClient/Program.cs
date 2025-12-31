@@ -35,7 +35,7 @@ internal static class Program
             bus,
             username,
             // Callback for appending messages to UI
-            msg => ui?.AppendMessage(msg),
+            (msg, color) => ui?.AppendMessage(msg, color),
             // Callback for showing file dialog
             file => ui?.ShowSaveFileDialog(file) ?? new Terminal.Gui.Dialog()
         );
