@@ -93,10 +93,55 @@ public class ChatLogic
     }
 
     /// <summary>
-    /// Sends a public chat message.
+    /// Sends a public chat message or handles commands like /statistik.
     /// </summary>
-    public void SendMessage(string text)
+    public async void SendMessage(string text)
     {
+        text ??= "";
+        var trimmed = text.Trim();
+
+        if (string.IsNullOrWhiteSpace(trimmed))
+            return;
+
+        // --- Command: /statistik ---
+        if (trimmed.Equals("/statistik", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var res = await _bus.Rpc.RequestAsync<StatisticsRequest, StatisticsResponse>(
+                    new StatisticsRequest(Username)
+                );
+
+                _appendMessageCallback("=== Statistics ===");
+                _appendMessageCallback($"Total Messages: {res.TotalMessages}");
+                _appendMessageCallback($"Ø Messages per User: {res.AvgMessagesPerUser:F2}");
+                _appendMessageCallback("Top 3 most active Chatters:");
+
+                if (res.Top3 == null || res.Top3.Count == 0)
+                {
+                    _appendMessageCallback("  (currently no data)");
+                }
+                else
+                {
+                    int rank = 1;
+                    foreach (var t in res.Top3)
+                    {
+                        _appendMessageCallback($"  {rank}. {t.User}: {t.Messages}");
+                        rank++;
+                    }
+                }
+
+                _appendMessageCallback("================");
+            }
+            catch (Exception ex)
+            {
+                _appendMessageCallback($"[ERROR] Statistics couldn't be fetched: {ex.Message}");
+            }
+
+            return;
+        }
+
+        // --- Normal message ---
         _bus.PubSub.Publish(new SubmitMessageCommand(Username, text));
     }
 
@@ -121,10 +166,58 @@ public class ChatLogic
 
     }
 
+
+    /// <summary>
+    /// Handles the <c>/statistik</c> command by requesting chat statistics
+    /// from the server and printing the result to the chat output.
+    /// </summary>
+    /// <returns>
+    /// A task that represents the asynchronous statistics handling operation.
+    /// </returns>
+    public async Task HandleStatisticsCommand()
+    {
+        try
+        {
+            var res = await _bus.Rpc.RequestAsync<
+                StatisticsRequest,
+                StatisticsResponse>(
+                    new StatisticsRequest(Username)
+                );
+
+            _appendMessageCallback("=== Statistics ===");
+            _appendMessageCallback($"Total Messages: {res.TotalMessages}");
+            _appendMessageCallback($"Ø Messages per User: {res.AvgMessagesPerUser:F2}");
+            _appendMessageCallback("Top 3 most active Chatters:");
+
+            if (res.Top3 == null || res.Top3.Count == 0)
+            {
+                _appendMessageCallback("  (currently no data)");
+            }
+            else
+            {
+                int rank = 1;
+                foreach (var t in res.Top3)
+                {
+                    _appendMessageCallback($"  {rank}. {t.User}: {t.Messages}");
+                    rank++;
+                }
+            }
+
+            _appendMessageCallback("================");
+        }
+        catch (Exception ex)
+        {
+            _appendMessageCallback(
+                $"[ERROR] Statistics couldn't be fetched: {ex.Message}"
+            );
+        }
+    }
+
+
     /// <summary>
     /// Ensures the sent file exists and is smaller than 1 MB in size. If so, sends the file.
     /// </summary>
-    public async void HandleSendFile(string path)
+    public async Task HandleSendFile(string path)
     {
         if (!File.Exists(path))
         {
@@ -149,10 +242,11 @@ public class ChatLogic
         _appendMessageCallback($"[YOU] Sent file {info.Name}");
     }
 
+
     /// <summary>
     /// Saves a received file in Downloads/Chat.
     /// </summary>
-    public async void SaveFile(FileReceivedEvent file)
+    public async Task SaveFile(FileReceivedEvent file)
     {
         byte[] data = Convert.FromBase64String(file.ContentBase64);
 
@@ -169,6 +263,7 @@ public class ChatLogic
         _appendMessageCallback($"[SAVED] {path}");
     }
 
+
     /// <summary>
     /// Starts sending periodic heartbeat messages to the server to indicate that this client is still online.
     /// The heartbeat is sent every 10 seconds using a timer and Pub/Sub on the bus.
@@ -180,6 +275,7 @@ public class ChatLogic
             _bus.PubSub.Publish(new Heartbeat(Username));
         }, null, TimeSpan.Zero, TimeSpan.FromSeconds(10));
     }
+
 
     /// <summary>
     /// Stops sending heartbeat messages by disposing the underlying timer.
