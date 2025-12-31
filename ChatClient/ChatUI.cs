@@ -67,7 +67,6 @@ public class ChatUI
 
         // Import pub/sub message logic
         _logic.SubscribeEvents();
-        
 
         // Start heartbeat Timer
         _logic.StartHeartbeat();
@@ -79,11 +78,11 @@ public class ChatUI
     /// <summary>
     /// Handles key press events in the input field.
     /// </summary>
-    private void OnInputKeyPress(View.KeyEventEventArgs e)
+    private async void OnInputKeyPress(View.KeyEventEventArgs e)
     {
         if (e.KeyEvent.Key != Key.Enter) return;
 
-        string text = _inputField.Text.ToString() ?? "";
+        string text = _inputField.Text?.ToString() ?? "";
         _inputField.Text = "";
 
         if (string.IsNullOrWhiteSpace(text))
@@ -95,11 +94,16 @@ public class ChatUI
         // --- Quit chat ---
         if (text.Equals("/quit", StringComparison.OrdinalIgnoreCase))
         {
-            // Stop heartbeat
             _logic.StopHeartbeat();
-
-            // End client application
             Application.RequestStop();
+            e.Handled = true;
+            return;
+        }
+
+        // --- Statistics ---
+        if (text.Equals("/statistik", StringComparison.OrdinalIgnoreCase))
+        {
+            await _logic.HandleStatisticsCommand();
             e.Handled = true;
             return;
         }
@@ -107,7 +111,7 @@ public class ChatUI
         // --- Send file ---
         if (text.StartsWith("/sendfile ", StringComparison.OrdinalIgnoreCase))
         {
-            _logic.HandleSendFile(text.Substring(10).Trim());
+            await _logic.HandleSendFile(text.Substring(10).Trim());
             e.Handled = true;
             return;
         }
@@ -116,7 +120,11 @@ public class ChatUI
         if (text.StartsWith("/msg ", StringComparison.OrdinalIgnoreCase))
         {
             string payload = text.Substring(5).Trim();
-            string[] parts = payload.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+            string[] parts = payload.Split(
+                ' ',
+                2,
+                StringSplitOptions.RemoveEmptyEntries
+            );
 
             if (parts.Length < 2)
             {
@@ -125,10 +133,7 @@ public class ChatUI
                 return;
             }
 
-            string recipient = parts[0];
-            string message = parts[1];
-
-            _logic.SendPrivateMessage(recipient, message);
+            _logic.SendPrivateMessage(parts[0], parts[1]);
             e.Handled = true;
             return;
         }
@@ -156,9 +161,9 @@ public class ChatUI
 
         var label = new Label($"Save file '{file.FileName}'?") { X = 1, Y = 1 };
         var yesButton = new Button("Yes") { X = 10, Y = 3 };
-        yesButton.Clicked += () =>
+        yesButton.Clicked += async () =>
         {
-            _logic.SaveFile(file);
+            await _logic.SaveFile(file);
             _inputField.SetFocus();
             Application.RequestStop();
         };

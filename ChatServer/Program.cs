@@ -12,6 +12,8 @@ internal class Program
     /// </summary>
     private static readonly ConcurrentDictionary<string, DateTime> ConnectedUsers = new(StringComparer.OrdinalIgnoreCase);
 
+    private static readonly StatisticsStore Stats = new();
+
     private static async Task Main(string[] args)
     {
         Console.WriteLine("ChatServer is starting...");
@@ -43,6 +45,8 @@ internal class Program
 
                 Console.WriteLine($"User '{username}' logged in successfully.");
 
+                Stats.RegisterUser(username);
+
                 await bus.PubSub.PublishAsync(
                     new UserNotification($"*** User '{username}' has joined the chat. ***")
                 );
@@ -50,13 +54,29 @@ internal class Program
                 return new LoginResponse(true, string.Empty);
             });
 
+            // --- RPC: Handle Statistics Requests ---
+            await bus.Rpc.RespondAsync<StatisticsRequest, StatisticsResponse>(request =>
+            {
+                var (total, avg, top3) = Stats.BuildSnapshot();
+
+                return Task.FromResult(new StatisticsResponse(
+                    TotalMessages: total,
+                    AvgMessagesPerUser: avg,
+                    Top3: top3.Select(t => new TopChatter(t.User, t.Count)).ToList()
+                ));
+            });
+
             // --- Pub/Sub: Handle incoming commands from clients to submit a message ---
             await bus.PubSub.SubscribeAsync<SubmitMessageCommand>("chat_server_submit_message_subscription", async command =>
             {
                 Console.WriteLine($"Received message from '{command.Username}': '{command.Text}'");
 
+                var text = command.Text?.Trim() ?? "";
+
+                if (!text.StartsWith("/")) Stats.RecordMessage(command.Username);
+
                 // Create the event that will be broadcast to all clients
-                BroadcastMessageEvent broadcastEvent = new BroadcastMessageEvent(command.Username, command.Text);
+                BroadcastMessageEvent broadcastEvent = new BroadcastMessageEvent(command.Username, text);
 
                 // Broadcast the event to all clients
                 await bus.PubSub.PublishAsync(broadcastEvent);
