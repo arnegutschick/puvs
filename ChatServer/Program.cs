@@ -74,11 +74,13 @@ internal class Program
 
                 return new LoginResponse(true, string.Empty);
             });
+
             // --- RPC: Handle /time request ---
             await bus.Rpc.RespondAsync<TimeRequest, TimeResponse>(request =>
             {
                 return Task.FromResult(new TimeResponse(DateTime.Now));
             });
+
             // --- RPC: Handle Statistics Requests ---
             await bus.Rpc.RespondAsync<StatisticsRequest, StatisticsResponse>(request =>
             {
