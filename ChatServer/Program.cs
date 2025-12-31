@@ -6,17 +6,15 @@ namespace ChatServer;
 
 internal class Program
 {
+    public record UserInfo(DateTime LastHeartbeat, string Color);
+    
     /// <summary>
     /// Thread-safe dictionary to track connected users.
-    /// Key: username, Value: timestamp that gets updated every 10 seconds to ensure the user is still active.
+    /// Key: username, Value: User information that contains:
+    /// - A timestamp that gets updated every 10 seconds to ensure the user is still active and
+    /// - The color in which user messages will appear in the chat.
     /// </summary>
-    private static readonly ConcurrentDictionary<string, DateTime> ConnectedUsers = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Thread-safe dictionary to track user colors.
-    /// Key: username, Value: assigned color.
-    /// </summary>
-    private static readonly ConcurrentDictionary<string, string> UserColors = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, UserInfo> ConnectedUsers = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Predefined color pool for users.
@@ -57,10 +55,6 @@ internal class Program
                 if (!username.All(char.IsLetterOrDigit))
                     return DenyLogin(username, "Username may only contain letters and numbers.");
 
-                // Try to register user atomar
-                if (!ConnectedUsers.TryAdd(username, DateTime.UtcNow))
-                    return DenyLogin(username, "User is already logged in.");
-
                 // Assign color cyclically from the pool
                 string assignedColor;
                 lock (_colorLock)
@@ -68,8 +62,10 @@ internal class Program
                     assignedColor = ColorPool[_colorIndex % ColorPool.Length];
                     _colorIndex++;
                 }
-                
-                UserColors[username] = assignedColor;
+
+                // Try to register user atomar
+                if (!ConnectedUsers.TryAdd(username, new UserInfo(DateTime.UtcNow, assignedColor)))
+                    return DenyLogin(username, "User is already logged in.");
 
                 Console.WriteLine($"User '{username}' logged in successfully with color '{assignedColor}'.");
 
@@ -100,7 +96,7 @@ internal class Program
                 Console.WriteLine($"Received message from '{command.Username}': '{command.Text}'");
 
                 // Get the user's assigned color
-                string userColor = UserColors.TryGetValue(command.Username, out var color) ? color : "White";
+                string userColor = ConnectedUsers.TryGetValue(command.Username, out var UserInfo) ? UserInfo.Color : "White";
 
                 var text = command.Text?.Trim() ?? "";
 
@@ -121,7 +117,6 @@ internal class Program
 
                 // Remove user from tracking
                 ConnectedUsers.TryRemove(request.Username, out _);
-                UserColors.TryRemove(request.Username, out _);
 
                 Console.WriteLine($"User '{request.Username}' logged out.");
                 // Announce the departure to all clients
@@ -137,10 +132,7 @@ internal class Program
                 string recipientKey = command.RecipientUsername.Trim();
                 string senderTopic = $"private_{command.SenderUsername.ToLowerInvariant()}";
 
-                // Get sender's color
-                string senderColor = UserColors.TryGetValue(command.SenderUsername, out var color) ? color : "White";
-
-                if (!ConnectedUsers.TryGetValue(recipientKey, out DateTime heartBeat))
+                if (!ConnectedUsers.TryGetValue(recipientKey, out var UserInfo))
                 {
                     var errorEvent = new PrivateMessageEvent(
                         "System",
@@ -160,7 +152,7 @@ internal class Program
                     command.SenderUsername,
                     command.RecipientUsername,
                     command.Text,
-                    senderColor,
+                    "Yellow",
                     false
                 );
 
@@ -173,7 +165,7 @@ internal class Program
                     command.SenderUsername,
                     command.RecipientUsername,
                     command.Text,
-                    senderColor,
+                    "Yellow",
                     true // Mark as outgoing for sender display
                 );
                 await bus.PubSub.PublishAsync(senderEvent, senderTopic);
@@ -194,8 +186,8 @@ internal class Program
             {
                 ConnectedUsers.AddOrUpdate(
                     hb.Username,
-                    _ => DateTime.UtcNow,
-                    (_, __) => DateTime.UtcNow
+                    _ => new UserInfo(DateTime.UtcNow, "White"),
+                    (_, old) => old with { LastHeartbeat = DateTime.UtcNow }
                 );
 
                 return Task.CompletedTask;
@@ -237,11 +229,10 @@ internal class Program
 
                 foreach (var user in ConnectedUsers)
                 {
-                    if (now - user.Value > TimeSpan.FromSeconds(30))
+                    if (now - user.Value.LastHeartbeat > TimeSpan.FromSeconds(30))
                     {
-                        if (ConnectedUsers.TryRemove(user.Key, out _))
+                        if (ConnectedUsers.TryRemove(user.Key, out var removedUser))
                         {
-                            UserColors.TryRemove(user.Key, out _);
                             Console.WriteLine($"User '{user.Key}' timed out.");
 
                             await bus.PubSub.PublishAsync(
