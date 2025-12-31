@@ -7,7 +7,7 @@ namespace ChatServer;
 internal class Program
 {
     public record UserInfo(DateTime LastHeartbeat, string Color);
-    
+
     /// <summary>
     /// Thread-safe dictionary to track connected users.
     /// Key: username, Value: User information that contains:
@@ -21,12 +21,11 @@ internal class Program
     /// </summary>
     private static readonly string[] ColorPool = new[]
     {
-        "Blue", "Green", "Magenta", "Cyan", "Red", "Yellow", "DarkBlue",
-        "DarkGreen", "DarkMagenta", "DarkCyan", "DarkRed", "DarkYellow"
+        "Blue", "Green", "Magenta", "Cyan", "Brown",
+        "BrightBlue", "BrightMagenta", "BrightCyan", "BrightRed"
     };
-    
+
     private static int _colorIndex = 0;
-    private static readonly object _colorLock = new();
 
     private static readonly StatisticsStore Stats = new();
 
@@ -57,11 +56,9 @@ internal class Program
 
                 // Assign color cyclically from the pool
                 string assignedColor;
-                lock (_colorLock)
-                {
-                    assignedColor = ColorPool[_colorIndex % ColorPool.Length];
-                    _colorIndex++;
-                }
+                if (_colorIndex >= int.MaxValue - 1) _colorIndex = 0;
+                int index = Interlocked.Increment(ref _colorIndex);
+                assignedColor = ColorPool[index % ColorPool.Length];
 
                 // Try to register user atomar
                 if (!ConnectedUsers.TryAdd(username, new UserInfo(DateTime.UtcNow, assignedColor)))
@@ -75,7 +72,7 @@ internal class Program
                     new UserNotification($"*** User '{username}' has joined the chat. ***")
                 );
 
-                return new LoginResponse(true, string.Empty, assignedColor);
+                return new LoginResponse(true, string.Empty);
             });
 
             // --- RPC: Handle Statistics Requests ---
@@ -152,7 +149,7 @@ internal class Program
                     command.SenderUsername,
                     command.RecipientUsername,
                     command.Text,
-                    "Yellow",
+                    UserInfo.Color,
                     false
                 );
 
@@ -165,7 +162,7 @@ internal class Program
                     command.SenderUsername,
                     command.RecipientUsername,
                     command.Text,
-                    "Yellow",
+                    UserInfo.Color,
                     true // Mark as outgoing for sender display
                 );
                 await bus.PubSub.PublishAsync(senderEvent, senderTopic);
