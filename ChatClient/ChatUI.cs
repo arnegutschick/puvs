@@ -92,49 +92,54 @@ public class ChatUI
             return;
         }
 
-        // --- Quit chat ---
-        if (text.Equals("/quit", StringComparison.OrdinalIgnoreCase))
+        // --- Commands start with "/" ---
+        if (text.StartsWith("/"))
         {
-            _logic.StopHeartbeat();
-            Application.RequestStop();
-            e.Handled = true;
-            return;
-        }
+            string command = text.Split(' ', 2)[0].ToLowerInvariant();
 
-        // --- Statistics ---
-        if (text.Equals("/statistik", StringComparison.OrdinalIgnoreCase))
-        {
-            await _logic.HandleStatisticsCommand();
-            e.Handled = true;
-            return;
-        }
-
-        // --- Send file ---
-        if (text.StartsWith("/sendfile ", StringComparison.OrdinalIgnoreCase))
-        {
-            await _logic.HandleSendFile(text.Substring(10).Trim());
-            e.Handled = true;
-            return;
-        }
-
-        // --- Private message ---
-        if (text.StartsWith("/msg ", StringComparison.OrdinalIgnoreCase))
-        {
-            string payload = text.Substring(5).Trim();
-            string[] parts = payload.Split(
-                ' ',
-                2,
-                StringSplitOptions.RemoveEmptyEntries
-            );
-
-            if (parts.Length < 2)
+            switch (command)
             {
-                AppendMessage("[ERROR] Usage: /msg <username> <message>", "red");
-                e.Handled = true;
-                return;
+                case "/quit":
+                    _logic.StopHeartbeat();
+                    Application.RequestStop();
+                    break;
+
+                case "/stats":
+                    await _logic.HandleStatisticsCommand();
+                    break;
+
+                case "/sendfile":
+                    string filePath = text.Substring(10).Trim();
+                    await _logic.HandleSendFile(filePath);
+                    break;
+
+                case "/msg":
+                    string payload = text.Substring(5).Trim();
+                    string[] parts = payload.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+
+                    if (parts.Length < 2)
+                    {
+                        AppendMessage("[ERROR] Usage: /msg <username> <message>", "red");
+                    }
+                    else
+                    {
+                        _logic.SendPrivateMessage(parts[0], parts[1]);
+                    }
+                    break;
+
+                case "/help":
+                    AppendMessage("Available commands: /quit, /stats, /sendfile <path>, /msg <user> <msg>, /help, /time", "cyan");
+                    break;
+
+                case "/time":
+                    await _logic.HandleTimeCommand();
+                    break;
+
+                default:
+                    AppendMessage($"[ERROR] Unknown command '{command}'. Use /help for a list of commands.", "red");
+                    break;
             }
 
-            _logic.SendPrivateMessage(parts[0], parts[1]);
             e.Handled = true;
             return;
         }
@@ -143,6 +148,7 @@ public class ChatUI
         _logic.SendMessage(text);
         e.Handled = true;
     }
+
 
     /// <summary>
     /// Adds a posted message to the message display field
@@ -153,21 +159,69 @@ public class ChatUI
         var attr = Application.Driver.MakeAttribute(color, Color.White);
         var cs = new ColorScheme { Normal = attr };
 
-        var label = new Label(message)
+        int width = _messagesScroll.Frame.Width - 1;
+
+        var lines = WrapText(message, width);
+
+        foreach (var line in lines)
         {
-            X = 0,
-            Y = _messageCount,
-            Width = message.Length
-        };
-        label.ColorScheme = cs;
+            var label = new Label(line)
+            {
+                X = 1,
+                Y = _messageCount,
+                Width = line.Length
+            };
+            label.ColorScheme = cs;
 
-        _messagesScroll.Add(label);
-        _messageCount++;
+            _messagesScroll.Add(label);
+            _messageCount++;
+        }
 
-        _messagesScroll.ContentSize = new Size(Math.Max(_messagesScroll.ContentSize.Width, message.Length), _messageCount);
+        _messagesScroll.ContentSize = new Size(
+            Math.Max(_messagesScroll.ContentSize.Width, width),
+            _messageCount
+        );
         _messagesScroll.SetNeedsDisplay();
     }
-    
+
+
+    /// <summary>
+    /// Splits a given text into multiple lines so that each line does not exceed the specified maximum width.
+    /// This is useful for displaying messages in a fixed-width terminal UI, ensuring text wraps correctly
+    /// within the available horizontal space.
+    /// </summary>
+    /// <param name="text">The text to be wrapped into multiple lines.</param>
+    /// <param name="maxWidth">The maximum number of characters allowed per line.</param>
+    /// <returns>A list of strings, each representing a line of text that fits within the given width.</returns>
+    private static List<string> WrapText(string text, int maxWidth)
+    {
+        var lines = new List<string>();
+        var words = text.Split(' ');
+
+        string currentLine = "";
+
+        foreach (var word in words)
+        {
+            if ((currentLine + " " + word).Trim().Length > maxWidth)
+            {
+                lines.Add(currentLine);
+                currentLine = word;
+            }
+            else
+            {
+                if (currentLine.Length > 0)
+                    currentLine += " ";
+                currentLine += word;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(currentLine))
+            lines.Add(currentLine);
+
+        return lines;
+    }
+
+
     /// <summary>
     /// Custom dialog when user receives a sent file. Allows the user to save the sent file.
     /// </summary>
