@@ -1,4 +1,4 @@
-using ChatServer.Infrastructure;
+using Chat.Contracts.Infrastructure;
 using ChatServer.Services;
 using EasyNetQ;
 

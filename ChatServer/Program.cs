@@ -1,20 +1,22 @@
 using EasyNetQ;
-using ChatServer.Infrastructure;
+using Chat.Contracts.Infrastructure;
 using ChatServer.Services;
 using ChatServer.Handlers;
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Configuration;
 
 namespace ChatServer;
 
 internal class Program
 {
+    private static readonly IConfiguration configuration = new ConfigurationBuilder()
+        .SetBasePath(AppContext.BaseDirectory)
+        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+        .Build();
+
     private static readonly ConcurrentDictionary<string, UserInfo> ConnectedUsers = new(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly string[] ColorPool = new[]
-    {
-        "Blue", "Green", "Magenta", "Cyan", "Brown",
-        "BrightBlue", "BrightMagenta", "BrightCyan", "BrightRed"
-    };
+    private static readonly string[] ColorPool = configuration.GetSection("ChatSettings:ChatMessageColorPool").Get<string[]>() ?? Array.Empty<string>();
 
     private static async Task Main(string[] args)
     {
@@ -23,8 +25,11 @@ internal class Program
         try
         {
             // --- Bus connection ---
-            using IBus bus = RabbitMqBusFactory.Create("host=localhost");
-            Console.WriteLine("Connected to RabbitMQ.");
+            string rabbitHost = configuration.GetValue<string>("RabbitMQ:Host") ?? "localhost";
+            int rabbitPort = configuration.GetValue<int>("RabbitMQ:Port");
+
+            using IBus bus = RabbitMqBusFactory.Create($"host={rabbitHost};port={rabbitPort}");
+            Console.WriteLine($"Connected to RabbitMQ at {rabbitHost}:{rabbitPort}.");
 
             // --- Services ---
             var userService = new UserService(ConnectedUsers, ColorPool);
@@ -32,7 +37,7 @@ internal class Program
             var messageService = new MessageService(bus, ConnectedUsers, statisticsService);
             var privateMessageService = new PrivateMessageService(bus, ConnectedUsers);
             var fileService = new FileService(bus);
-            var heartbeatService = new HeartbeatService(userService, bus);
+            var heartbeatService = new HeartbeatService(userService, bus, configuration);
 
             // --- Handlers ---
             var userHandler = new UserHandler(bus, userService);                                    // Handle user Login / Logout

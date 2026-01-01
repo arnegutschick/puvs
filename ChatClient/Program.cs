@@ -1,20 +1,27 @@
+using Chat.Contracts.Infrastructure;
 using EasyNetQ;
+using Microsoft.Extensions.Configuration;
 
 namespace ChatClient;
 
 internal static class Program
 {
-    private static IBus bus = null!;
-    private static string username = "";
+    private static readonly IConfiguration configuration = new ConfigurationBuilder()
+        .SetBasePath(AppContext.BaseDirectory)
+        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+        .Build();
 
     static void Main()
     {
-        // Create RabbitMQ bus
-        bus = RabbitHutch.CreateBus("host=localhost");
+        // --- Bus connection ---
+        string rabbitHost = configuration.GetValue<string>("RabbitMQ:Host") ?? "localhost";
+        int rabbitPort = configuration.GetValue<int>("RabbitMQ:Port");
+
+        IBus bus = RabbitMqBusFactory.Create($"host={rabbitHost};port={rabbitPort}");
 
         // Ask user for username
         Console.Write("Enter username: ");
-        username = Console.ReadLine() ?? Guid.NewGuid().ToString();
+        string username = Console.ReadLine() ?? Guid.NewGuid().ToString();
 
         // Perform login via RPC
         var loginResponse = bus.Rpc.Request<Chat.Contracts.LoginRequest, Chat.Contracts.LoginResponse>(
@@ -34,6 +41,7 @@ internal static class Program
         ChatLogic logic = new ChatLogic(
             bus,
             username,
+            configuration,
             // Callback for appending messages to UI
             (msg, color) => ui?.AppendMessage(msg, color),
             // Callback for showing file dialog
