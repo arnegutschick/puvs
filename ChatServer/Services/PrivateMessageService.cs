@@ -1,7 +1,7 @@
 using Chat.Contracts;
 using EasyNetQ;
 using System.Collections.Concurrent;
-using ChatServer.Infrastructure;
+using Chat.Contracts.Infrastructure;
 
 namespace ChatServer.Services;
 

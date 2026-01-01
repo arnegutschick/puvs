@@ -1,6 +1,6 @@
 using EasyNetQ;
 
-namespace ChatServer.Infrastructure;
+namespace Chat.Contracts.Infrastructure;
 
 public static class RabbitMqBusFactory
 {

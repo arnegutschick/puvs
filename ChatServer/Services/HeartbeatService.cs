@@ -1,5 +1,6 @@
 using Chat.Contracts;
 using EasyNetQ;
+using Microsoft.Extensions.Configuration;
 
 namespace ChatServer.Services;
 
@@ -7,12 +8,14 @@ public class HeartbeatService
 {
     private readonly UserService _users;
     private readonly IBus _bus;
-    private readonly TimeSpan _timeout = TimeSpan.FromSeconds(30);
+    private readonly TimeSpan _timeout;
 
-    public HeartbeatService(UserService users, IBus bus)
+    public HeartbeatService(UserService users, IBus bus, IConfiguration configuration)
     {
         _users = users;
         _bus = bus;
+        int timeoutSeconds = configuration.GetValue("ChatSettings:HeartbeatTimeoutSeconds", 30);
+        _timeout = TimeSpan.FromSeconds(timeoutSeconds);
     }
 
     public void Handle(string username)

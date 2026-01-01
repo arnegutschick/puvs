@@ -1,6 +1,7 @@
 using EasyNetQ;
 using Chat.Contracts;
 using Terminal.Gui;
+using Microsoft.Extensions.Configuration;
 
 namespace ChatClient;
 
@@ -9,6 +10,7 @@ public class ChatLogic
     private readonly IBus _bus;
     private readonly Action<string, string> _appendMessageCallback;
     private readonly Func<BroadcastFileEvent, Dialog> _showFileDialogCallback;
+    private readonly IConfiguration _configuration;
     private Timer? _heartbeatTimer;
 
     public string Username { get; }
@@ -16,11 +18,14 @@ public class ChatLogic
     public ChatLogic(
         IBus bus,
         string username,
+        IConfiguration configuration,
         Action<string, string> appendMessageCallback,
-        Func<BroadcastFileEvent, Dialog> showFileDialogCallback)
+        Func<BroadcastFileEvent, Dialog> showFileDialogCallback
+        )
     {
         _bus = bus;
         Username = username;
+        _configuration = configuration;
         _appendMessageCallback = appendMessageCallback;
         _showFileDialogCallback = showFileDialogCallback;
     }
@@ -269,14 +274,16 @@ public class ChatLogic
 
     /// <summary>
     /// Starts sending periodic heartbeat messages to the server to indicate that this client is still online.
-    /// The heartbeat is sent every 10 seconds using a timer and Pub/Sub on the bus.
+    /// The heartbeat is sent using a timer and Pub/Sub on the bus. The time interval can be modified in the 'appsettings.json' file
     /// </summary>
     public void StartHeartbeat()
     {
+        int intervalSeconds = _configuration.GetValue("ChatSettings:ClientHeartbeatIntervalSeconds", 10);
+
         _heartbeatTimer = new Timer(_ =>
         {
             _bus.PubSub.Publish(new Heartbeat(Username));
-        }, null, TimeSpan.Zero, TimeSpan.FromSeconds(10));
+        }, null, TimeSpan.Zero, TimeSpan.FromSeconds(intervalSeconds));
     }
 
 

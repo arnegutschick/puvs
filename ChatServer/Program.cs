@@ -1,47 +1,60 @@
 using EasyNetQ;
-using ChatServer.Infrastructure;
+using Chat.Contracts.Infrastructure;
 using ChatServer.Services;
 using ChatServer.Handlers;
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Configuration;
 
 namespace ChatServer;
 
 internal class Program
 {
-    private static readonly ConcurrentDictionary<string, UserInfo> ConnectedUsers = new(StringComparer.OrdinalIgnoreCase);
-
-    private static readonly string[] ColorPool = new[]
-    {
-        "Blue", "Green", "Magenta", "Cyan", "Brown",
-        "BrightBlue", "BrightMagenta", "BrightCyan", "BrightRed"
-    };
-
     private static async Task Main(string[] args)
     {
         Console.WriteLine("ChatServer is starting...");
 
-        try
-        {
+            // --- Config aus Repo-Wurzel laden ---
+            // AppContext.BaseDirectory zeigt auf bin/Debug/net10.0/
+            // Wir gehen 3 Ebenen hoch zum Projekt-/Repo-Root
+            string repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
+            string configPath = Path.Combine(repoRoot, "appsettings.json");
+
+            var configuration = new ConfigurationBuilder()
+                .SetBasePath(repoRoot)
+                .AddJsonFile(configPath, optional: false, reloadOnChange: true)
+                .Build();
+
             // --- Bus connection ---
-            using IBus bus = RabbitMqBusFactory.Create("host=localhost");
-            Console.WriteLine("Connected to RabbitMQ.");
+            string rabbitHost = configuration.GetValue<string>("RabbitMQ:Host") ?? "localhost";
+
+            using IBus bus = RabbitMqBusFactory.Create($"host={rabbitHost}");
+            Console.WriteLine($"Connected to RabbitMQ at {rabbitHost}.");
 
             // --- Services ---
+            var ColorPool = configuration.GetSection("ChatSettings:ChatMessageColorPool").Get<string[]>() ?? Array.Empty<string>();
+            if (ColorPool.Length == 0)
+            {
+                Console.WriteLine("Warning: No colors configured. Using default colors.");
+                ColorPool = new[] { "Blue", "Green", "Magenta", "Cyan" };
+            }
+            
+            var ConnectedUsers = new ConcurrentDictionary<string, UserInfo>(StringComparer.OrdinalIgnoreCase);
+
             var userService = new UserService(ConnectedUsers, ColorPool);
             var statisticsService = new StatisticsService();
             var messageService = new MessageService(bus, ConnectedUsers, statisticsService);
             var privateMessageService = new PrivateMessageService(bus, ConnectedUsers);
             var fileService = new FileService(bus);
-            var heartbeatService = new HeartbeatService(userService, bus);
+            var heartbeatService = new HeartbeatService(userService, bus, configuration);
 
             // --- Handlers ---
-            var userHandler = new UserHandler(bus, userService);                                    // Handle user Login / Logout
-            var messageHandler = new MessageHandler(bus, messageService);                           // Handle normal chat messages
-            var privateMessageHandler = new PrivateMessageHandler(bus, privateMessageService);      // Handle private chat messages
-            var fileHandler = new FileHandler(bus, fileService);                                    // Handle sent files
-            var heartbeatHandler = new HeartbeatHandler(bus, heartbeatService);                     // Handle heartbeats for automated timeout checks
-            var statisticsHandler = new StatisticsHandler(bus, statisticsService);                  // Handle statistics command requests
-            var timeHandler = new TimeHandler(bus);                                                 // Handle time command requests
+            var userHandler = new UserHandler(bus, userService);
+            var messageHandler = new MessageHandler(bus, messageService);
+            var privateMessageHandler = new PrivateMessageHandler(bus, privateMessageService);
+            var fileHandler = new FileHandler(bus, fileService);
+            var heartbeatHandler = new HeartbeatHandler(bus, heartbeatService);
+            var statisticsHandler = new StatisticsHandler(bus, statisticsService);
+            var timeHandler = new TimeHandler(bus);
 
             // --- Start Handlers ---
             userHandler.Start();
@@ -57,14 +70,6 @@ internal class Program
 
             Console.WriteLine("Server is running. Press [Enter] to exit.");
             Console.ReadLine();
-        }
-        catch (Exception ex)
-        {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"An error occurred: {ex.Message}");
-            Console.WriteLine("Please ensure RabbitMQ is running and accessible at 'localhost'.");
-            Console.ResetColor();
-        }
 
         Console.WriteLine("ChatServer is shutting down.");
     }
