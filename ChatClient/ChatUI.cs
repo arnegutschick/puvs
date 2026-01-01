@@ -114,6 +114,12 @@ public class ChatUI
                     break;
 
                 case "/msg":
+                    if (text.Length <= 5)
+                    {
+                        AppendMessage("[ERROR] Usage: /msg <username> <message>", "red");
+                        break;
+                    }
+
                     string payload = text.Substring(5).Trim();
                     string[] parts = payload.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
 
@@ -128,7 +134,7 @@ public class ChatUI
                     break;
 
                 case "/help":
-                    AppendMessage("Available commands: /quit, /stats, /sendfile <path>, /msg <user> <msg>, /help, /time", "cyan");
+                    AppendMessage("[INFO] Available commands: /quit, /stats, /sendfile <path>, /msg <user> <msg>, /help, /time", "Black");
                     break;
 
                 case "/time":
@@ -225,7 +231,7 @@ public class ChatUI
     /// <summary>
     /// Custom dialog when user receives a sent file. Allows the user to save the sent file.
     /// </summary>
-    public Dialog ShowSaveFileDialog(FileReceivedEvent file)
+    public Dialog ShowSaveFileDialog(BroadcastFileEvent file)
     {
         var dialog = new Dialog("File received", 60, 7);
 

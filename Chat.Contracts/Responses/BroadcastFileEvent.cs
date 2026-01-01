@@ -1,0 +1,1 @@
+public record BroadcastFileEvent(string Sender, string FileName, string ContentBase64, long FileSizeBytes);
