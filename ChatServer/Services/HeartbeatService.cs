@@ -20,9 +20,9 @@ public class HeartbeatService
         _users.UpdateHeartbeat(username);
     }
 
-    public void StartCleanupTask(CancellationToken token = default)
+    public Task StartCleanupTask(CancellationToken token = default)
     {
-        _ = Task.Run(async () =>
+        return Task.Run(async () =>
         {
             while (!token.IsCancellationRequested)
             {
@@ -34,6 +34,7 @@ public class HeartbeatService
                 {
                     if (_users.Remove(username))
                     {
+                        Console.WriteLine($"User '{username}' has timed out.");
                         await _bus.PubSub.PublishAsync(
                             new UserNotification(
                                 $"*** User '{username}' has left the chat (timeout). ***"

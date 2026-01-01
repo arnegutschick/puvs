@@ -29,12 +29,9 @@ public class PrivateMessageService
 
         if (!_users.TryGetValue(recipientKey, out var recipientInfo))
         {
-            var errorEvent = new PrivateMessageEvent(
-                "System",
-                command.SenderUsername,
-                $"User '{command.RecipientUsername}' is not online or does not exist.",
-                "Red",
-                false
+            // Fehler-Event statt PrivateMessageEvent
+            var errorEvent = new ErrorEvent(
+                $"User '{command.RecipientUsername}' is not online or does not exist."
             );
 
             await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
@@ -52,6 +49,8 @@ public class PrivateMessageService
 
         string recipientTopic = TopicNames.CreatePrivateUserTopicName(command.RecipientUsername);
         await _bus.PubSub.PublishAsync(recipientEvent, recipientTopic);
+
+        Console.WriteLine($"Sent private message to '{command.RecipientUsername}'.");
 
         // Kopie an Sender
         var senderEvent = new PrivateMessageEvent(

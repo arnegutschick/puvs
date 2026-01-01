@@ -22,6 +22,9 @@ public class StatisticsHandler
 
     private Task<StatisticsResponse> HandleAsync(StatisticsRequest request)
     {
+        // Log: Request erhalten
+        Console.WriteLine($"Received statistics request from {request.RequestingUser}.");
+
         var (total, avg, top3) = _service.Snapshot();
 
         var response = new StatisticsResponse(
@@ -29,6 +32,9 @@ public class StatisticsHandler
             AvgMessagesPerUser: avg,
             Top3: top3.Select(t => new TopChatterDto(t.User, t.MessageCount)).ToList()
         );
+
+        // Log: Antwort senden
+        Console.WriteLine($"Sent statistics response to {request.RequestingUser}.");
 
         return Task.FromResult(response);
     }
