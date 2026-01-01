@@ -35,13 +35,13 @@ internal class Program
             var heartbeatService = new HeartbeatService(userService, bus);
 
             // --- Handlers ---
-            var userHandler = new UserHandler(bus, userService);                  // Login / Logout
-            var messageHandler = new MessageHandler(bus, messageService);         // Broadcast messages
-            var privateMessageHandler = new PrivateMessageHandler(bus, privateMessageService); // /msg
-            var fileHandler = new FileHandler(bus, fileService);                  // /sendfile
-            var heartbeatHandler = new HeartbeatHandler(bus, heartbeatService);   // Heartbeats
-            var statisticsHandler = new StatisticsHandler(bus, statisticsService); // /stats RPC
-            var timeHandler = new TimeHandler(bus);                                // /time RPC
+            var userHandler = new UserHandler(bus, userService);                                    // Handle user Login / Logout
+            var messageHandler = new MessageHandler(bus, messageService);                           // Handle normal chat messages
+            var privateMessageHandler = new PrivateMessageHandler(bus, privateMessageService);      // Handle private chat messages
+            var fileHandler = new FileHandler(bus, fileService);                                    // Handle sent files
+            var heartbeatHandler = new HeartbeatHandler(bus, heartbeatService);                     // Handle heartbeats for automated timeout checks
+            var statisticsHandler = new StatisticsHandler(bus, statisticsService);                  // Handle statistics command requests
+            var timeHandler = new TimeHandler(bus);                                                 // Handle time command requests
 
             // --- Start Handlers ---
             userHandler.Start();
@@ -53,7 +53,7 @@ internal class Program
             await timeHandler.StartAsync();
 
             // --- Heartbeat cleanup loop ---
-            heartbeatService.StartCleanupTask();
+            await heartbeatService.StartCleanupTask();
 
             Console.WriteLine("Server is running. Press [Enter] to exit.");
             Console.ReadLine();
