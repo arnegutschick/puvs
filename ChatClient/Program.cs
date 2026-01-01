@@ -6,18 +6,18 @@ namespace ChatClient;
 
 internal static class Program
 {
-    private static readonly IConfiguration configuration = new ConfigurationBuilder()
-        .SetBasePath(AppContext.BaseDirectory)
-        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-        .Build();
-
     static void Main()
     {
+        string repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
+        var configFile = Path.Combine(repoRoot, "appsettings.json");
+        var configuration = new ConfigurationBuilder()
+            .AddJsonFile(configFile, optional: false, reloadOnChange: true)
+            .Build();
+
         // --- Bus connection ---
         string rabbitHost = configuration.GetValue<string>("RabbitMQ:Host") ?? "localhost";
-        int rabbitPort = configuration.GetValue<int>("RabbitMQ:Port");
 
-        IBus bus = RabbitMqBusFactory.Create($"host={rabbitHost};port={rabbitPort}");
+        IBus bus = RabbitMqBusFactory.Create($"host={rabbitHost}");
 
         // Ask user for username
         Console.Write("Enter username: ");
