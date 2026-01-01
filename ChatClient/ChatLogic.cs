@@ -8,7 +8,7 @@ public class ChatLogic
 {
     private readonly IBus _bus;
     private readonly Action<string, string> _appendMessageCallback;
-    private readonly Func<FileReceivedEvent, Dialog> _showFileDialogCallback;
+    private readonly Func<BroadcastFileEvent, Dialog> _showFileDialogCallback;
     private Timer? _heartbeatTimer;
 
     public string Username { get; }
@@ -17,7 +17,7 @@ public class ChatLogic
         IBus bus,
         string username,
         Action<string, string> appendMessageCallback,
-        Func<FileReceivedEvent, Dialog> showFileDialogCallback)
+        Func<BroadcastFileEvent, Dialog> showFileDialogCallback)
     {
         _bus = bus;
         Username = username;
@@ -31,7 +31,7 @@ public class ChatLogic
     public void SubscribeEvents()
     {
         string subscriptionId = $"chat_client_{Guid.NewGuid()}";
-        string privateTopic = $"private_{Username.ToLowerInvariant()}";
+        string privateTopic = $"chat.private.{Username.ToLowerInvariant()}";
 
         // --- Broadcast chat messages ---
         _bus.PubSub.Subscribe<BroadcastMessageEvent>(subscriptionId, msg =>
@@ -52,7 +52,7 @@ public class ChatLogic
         });
 
         // --- File messages ---
-        _bus.PubSub.Subscribe<FileReceivedEvent>(subscriptionId, file =>
+        _bus.PubSub.Subscribe<BroadcastFileEvent>(subscriptionId, file =>
         {
             if (file.Sender == Username) return;
 
@@ -89,6 +89,22 @@ public class ChatLogic
                             privateMessage.UserColor
                         );
                     }
+                });
+            },
+            cfg => cfg.WithTopic(privateTopic)
+        );
+
+        // --- Error Messages ---
+        _bus.PubSub.Subscribe<ErrorEvent>(
+            privateTopic,
+            error =>
+            {
+                Application.MainLoop.Invoke(() =>
+                {
+                    _appendMessageCallback(
+                        $"[ERROR] {error.Message}",
+                        "Red"
+                    );
                 });
             },
             cfg => cfg.WithTopic(privateTopic)
@@ -185,7 +201,7 @@ public class ChatLogic
                 int rank = 1;
                 foreach (var t in res.Top3)
                 {
-                    _appendMessageCallback($"  {rank}. {t.User}: {t.Messages}", "Black");
+                    _appendMessageCallback($"  {rank}. {t.User}: {t.MessageCount}", "Black");
                     rank++;
                 }
             }
@@ -233,7 +249,7 @@ public class ChatLogic
     /// <summary>
     /// Saves a received file in Downloads/Chat.
     /// </summary>
-    public async Task SaveFile(FileReceivedEvent file)
+    public async Task SaveFile(BroadcastFileEvent file)
     {
         byte[] data = Convert.FromBase64String(file.ContentBase64);
 
