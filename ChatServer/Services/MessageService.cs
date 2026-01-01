@@ -4,12 +4,22 @@ using System.Collections.Concurrent;
 
 namespace ChatServer.Services;
 
+/// <summary>
+/// Service responsible for handling broadcast messages from clients.
+/// Updates statistics and publishes the messages to all connected clients via Pub/Sub.
+/// </summary>
 public class MessageService
 {
     private readonly IBus _bus;
     private readonly ConcurrentDictionary<string, UserInfo> _users;
     private readonly StatisticsService _stats;
 
+    /// <summary>
+    /// Initializes the MessageService with a message bus, user dictionary, and statistics service.
+    /// </summary>
+    /// <param name="bus">The EasyNetQ message bus for publishing broadcast events.</param>
+    /// <param name="users">Thread-safe dictionary of currently connected users.</param>
+    /// <param name="stats">Service responsible for tracking message statistics.</param>
     public MessageService(
         IBus bus,
         ConcurrentDictionary<string, UserInfo> users,
@@ -20,27 +30,41 @@ public class MessageService
         _stats = stats;
     }
 
+
+    /// <summary>
+    /// Handles an incoming message from a client.
+    /// - Trims whitespace
+    /// - Records the message in statistics if it is not a command (does not start with '/')
+    /// - Determines the user's display color
+    /// - Broadcasts the message to all clients
+    /// </summary>
+    /// <param name="command">The <see cref="SubmitMessageCommand"/> containing the username and text.</param>
     public async Task HandleAsync(SubmitMessageCommand command)
     {
         Console.WriteLine(
             $"Received message from '{command.Username}': '{command.Text}'"
         );
 
+        // Normalize and trim the message text
         var text = command.Text?.Trim() ?? "";
 
+        // --- Record statistics only for regular messages ---
         if (!text.StartsWith("/"))
             _stats.RecordMessage(command.Username);
 
+        // --- Determine user's color, default to Black if unknown ---
         string color = _users.TryGetValue(command.Username, out var user)
             ? user.Color
             : "Black";
 
+        // --- Create broadcast event ---
         var evt = new BroadcastMessageEvent(
             command.Username,
             text,
             color
         );
 
+        // --- Publish to all subscribers ---
         await _bus.PubSub.PublishAsync(evt);
 
         Console.WriteLine("Broadcasted message to all clients.");
