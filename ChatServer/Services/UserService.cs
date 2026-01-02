@@ -27,6 +27,20 @@ public class UserService
     }
 
 
+
+    /// <summary>
+    /// Retrieves the current list of active users in the chat.
+    /// </summary>
+    /// <returns>
+    /// A read-only list of usernames representing all users
+    /// that are currently logged in and tracked by the <see cref="UserService"/>.
+    /// </returns>
+    public IReadOnlyList<string> GetActiveUsers()
+    {
+        return _users.Select(user => user.Key).ToList();
+    }
+
+
     /// <summary>
     /// Handles a login request.
     /// Validates the username, assigns a color, and adds the user to the active collection.
@@ -107,8 +121,8 @@ public class UserService
     public IEnumerable<string> GetTimedOut(TimeSpan timeout)
     {
         var now = DateTime.UtcNow;
-        return _users.Where(kv => now - kv.Value.LastHeartbeat > timeout)
-                     .Select(kv => kv.Key)
+        return _users.Where(user => now - user.Value.LastHeartbeat > timeout)
+                     .Select(user => user.Key)
                      .ToList();
     }
 

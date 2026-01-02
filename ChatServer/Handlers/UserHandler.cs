@@ -36,6 +36,7 @@ public class UserHandler
     {
         await StartLogin();
         await StartLogout();
+        await StartUserListRpc();
     }
 
 
@@ -107,5 +108,40 @@ public class UserHandler
                 }
             }
         );
+    }
+
+
+    /// <summary>
+    /// Registers an RPC responder for <see cref="UserListRequest"/>.
+    /// Delegates to <see cref="UserService.GetActiveUsers"/> to retrieve the current list of active users.
+    /// </summary>
+    private async Task StartUserListRpc()
+    {
+        await _bus.Rpc.RespondAsync<UserListRequest, UserListResponse>(async request =>
+        {
+            if (request == null)
+            {
+                Console.WriteLine("[WARNING] Received null UserListRequest");
+                return new UserListResponse(false, Array.Empty<string>());
+            }
+
+            try
+            {
+                // Retrieve active users from the service
+                var users = _service.GetActiveUsers();
+                return new UserListResponse(true, users);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Failed to process UserListRequest: {ex}");
+
+                // Notify the client about the failure
+                string senderTopic = TopicNames.CreatePrivateUserTopicName(request.SenderUsername);
+                var errorEvent = new ErrorEvent($"Failed to retrieve user list: {ex.Message}");
+                await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+
+                return new UserListResponse(false, Array.Empty<string>());
+            }
+        });
     }
 }
