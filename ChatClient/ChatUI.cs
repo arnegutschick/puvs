@@ -93,6 +93,7 @@ public class ChatUI
         // --- Start backend logic ---
         _logic.SubscribeEvents();  // Listen for incoming messages/events
         _logic.StartHeartbeat();   // Start periodic heartbeat for connection monitoring
+        _ = _logic.HandleUsersCommand(); // Display user list after joining
 
         // Add main window and start the application loop
         top.Add(win);
@@ -186,17 +187,6 @@ public class ChatUI
                         }
                         break;
 
-                    case "/help":
-                        // Display available commands - using seperate messages for each command to ensure correct message display in chat UI
-                        AppendMessage("[INFO] Available commands:", "Black");
-                        AppendMessage("/quit        - Quit the chat application", "Black");
-                        AppendMessage("/stats       - Show chat statistics", "Black");
-                        AppendMessage("/sendfile <path> - Send a file to all users", "Black");
-                        AppendMessage("/msg <user> <msg> - Send a private message to a user", "Black");
-                        AppendMessage("/time        - Show current server time", "Black");
-                        AppendMessage("/help        - Show this help message", "Black");
-                        break;
-
                     case "/time":
                         // Handle /time command
                         try
@@ -206,9 +196,35 @@ public class ChatUI
                         }
                         catch (Exception)
                         {
-                            AppendMessage($"[ERROR] Failed to request current time. Please try again", "red");
+                            AppendMessage($"[ERROR] Failed to request current time. Please try again.", "red");
                         }
                         break;
+
+                    case "/users":
+                        // Handle /users command
+                        try
+                        {
+                            await _logic.HandleUsersCommand();
+                            break;
+                        }
+                        catch (Exception)
+                        {
+                            AppendMessage($"[ERROR] Failed to request currently logged in users. Please try again.", "red");
+                        }
+                        break;
+
+                    case "/help":
+                        // Display available commands - using seperate messages for each command to ensure correct message display in chat UI
+                        AppendMessage("[INFO] Available commands:", "Black");
+                        AppendMessage("/quit        - Quit the chat application", "Black");
+                        AppendMessage("/stats       - Show chat statistics", "Black");
+                        AppendMessage("/sendfile <path> - Send a file to all users", "Black");
+                        AppendMessage("/msg <user> <msg> - Send a private message to a user", "Black");
+                        AppendMessage("/time        - Show current server time", "Black");
+                        AppendMessage("/users       - Show a list of currently logged in users", "Black");
+                        AppendMessage("/help        - Show this help message", "Black");
+                        break;
+
 
                     default:
                         // Handle unknown command
