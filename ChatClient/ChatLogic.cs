@@ -31,6 +31,8 @@ public class ChatLogic
     private Timer? _heartbeatTimer;
     // Current user's username
     internal string Username { get; }
+    private DateTime _lastServerHeartbeat = DateTime.UtcNow;
+    private bool ServerOnline => (DateTime.UtcNow - _lastServerHeartbeat) < TimeSpan.FromSeconds(_configuration.GetValue("ChatSettings:HeartbeatTimeoutSeconds", 30));
 
     // Constructor
     public ChatLogic(
@@ -146,6 +148,14 @@ public class ChatLogic
             },
             cfg => cfg.WithTopic(privateTopic)
         );
+
+        // --- Server Heartbeat ---
+        _bus.PubSub.Subscribe<ServerHeartbeat>(
+        $"client_heartbeat_{Username}",
+        hb =>
+        {
+            _lastServerHeartbeat = hb.Timestamp;
+        });
     }
 
 
@@ -154,7 +164,7 @@ public class ChatLogic
     /// Ignores empty or whitespace-only messages.
     /// </summary>
     /// <param name="text">The message text to send.</param>
-    public async void SendMessage(string text)
+    public async void SendMessageAsync(string text)
     {
         // Ensure text is not null
         text ??= "";
@@ -164,6 +174,9 @@ public class ChatLogic
         // Ignore empty messages
         if (string.IsNullOrWhiteSpace(trimmed))
             return;
+
+        // Check if the server is running before sending a command
+        if (!EnsureServerOnline()) return;
 
         // Publish the message to all users
         _bus.PubSub.Publish(new SubmitMessageCommand(Username, text));
@@ -176,7 +189,7 @@ public class ChatLogic
     /// </summary>
     /// <param name="recipientUsername">The username of the message recipient.</param>
     /// <param name="text">The message content to send.</param>
-    public void SendPrivateMessage(string recipientUsername, string text)
+    public void SendPrivateMessageAsync(string recipientUsername, string text)
     {
         // Prevent sending a private message to oneself
         if (string.Equals(recipientUsername, Username, StringComparison.OrdinalIgnoreCase))
@@ -184,6 +197,9 @@ public class ChatLogic
             _appendMessageCallback("[ERROR] You cannot send a private message to yourself.", "red");
             return;
         }
+
+        // Check if the server is running before sending a command
+        if (!EnsureServerOnline()) return;
 
         // Create a command representing the private message
         var command = new SendPrivateMessageCommand(
@@ -202,8 +218,11 @@ public class ChatLogic
     /// and displays it in the chat message view.
     /// </summary>
     /// <returns>A task representing the asynchronous operation.</returns>
-    public async Task HandleTimeCommand()
+    public async Task HandleTimeCommandAsync()
     {
+        // Check if the server is running before sending a command
+        if (!EnsureServerOnline()) return;
+
         // Request current server time via RPC
         var res = await _bus.Rpc.RequestAsync<TimeRequest, TimeResponse>(
             new TimeRequest(Username)
@@ -221,8 +240,11 @@ public class ChatLogic
     /// and displays it in the chat message view.
     /// </summary>
     /// <returns>A task representing the asynchronous operation.</returns>
-    public async Task HandleUsersCommand()
+    public async Task HandleUsersCommandAsync()
     {
+        // Check if the server is running before sending a command
+        if (!EnsureServerOnline()) return;
+
         // Request current server time via RPC
         var res = await _bus.Rpc.RequestAsync<UserListRequest, UserListResponse>(
             new UserListRequest(Username)
@@ -242,14 +264,15 @@ public class ChatLogic
     }
 
 
-
     /// <summary>
     /// Handles the /stats command: requests chat statistics from the server
     /// and displays them line by line in the message view.
     /// </summary>
     /// <returns>A task representing the asynchronous operation.</returns>
-    public async Task HandleStatisticsCommand()
+    public async Task HandleStatisticsCommandAsync()
     {
+        // Check if the server is running before sending a command
+        if (!EnsureServerOnline()) return;
 
         // Request statistics from the server via RPC
         var res = await _bus.Rpc.RequestAsync<
@@ -291,8 +314,14 @@ public class ChatLogic
     /// </summary>
     /// <param name="path">The local path of the file to send.</param>
     /// <returns>A task representing the asynchronous send operation.</returns>
-    public async Task HandleSendFile(string path)
+    public async Task HandleSendFileAsync(string path)
     {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            Console.WriteLine("[ERROR] Invalid file path.");
+            return;
+        }
+
         // Check if the file exists
         if (!File.Exists(path))
         {
@@ -308,6 +337,9 @@ public class ChatLogic
             _appendMessageCallback("[ERROR] File is too large (max 1 MB).", "red");
             return;
         }
+
+        // Check if the server is running before sending a command
+        if (!EnsureServerOnline()) return;
 
         // Read file bytes asynchronously
         byte[] bytes = await File.ReadAllBytesAsync(path);
@@ -331,7 +363,7 @@ public class ChatLogic
     /// </summary>
     /// <param name="file">The broadcast file event containing the file name and Base64-encoded content.</param>
     /// <returns>A task representing the asynchronous save operation.</returns>
-    public async Task SaveFile(BroadcastFileEvent file)
+    public async Task SaveFileAsync(BroadcastFileEvent file)
     {
         // Decode the Base64 content into a byte array
         byte[] data = Convert.FromBase64String(file.ContentBase64);
@@ -361,7 +393,7 @@ public class ChatLogic
     /// Starts sending periodic heartbeat messages to the server to indicate that this client is still online.
     /// The heartbeat is sent using a timer and Pub/Sub on the bus. The time interval can be modified in the 'appsettings.json' file
     /// </summary>
-    public void StartHeartbeat()
+    public void StartClientHeartbeat()
     {
         // Retrieve heartbeat interval from config file
         int intervalSeconds = _configuration.GetValue("ChatSettings:ClientHeartbeatIntervalSeconds", 10);
@@ -369,7 +401,7 @@ public class ChatLogic
         // Start a new timer that sends a heartbeat to the server 
         _heartbeatTimer = new Timer(_ =>
         {
-            _bus.PubSub.Publish(new Heartbeat(Username));
+            _bus.PubSub.Publish(new ClientHeatbeat(Username));
         }, null, TimeSpan.Zero, TimeSpan.FromSeconds(intervalSeconds));
     }
 
@@ -378,8 +410,30 @@ public class ChatLogic
     /// Stops sending heartbeat messages by disposing the underlying timer.
     /// Call this method when the client is logging out or the application is closing.
     /// </summary>
-    public void StopHeartbeat()
+    public void StopClientHeartbeat()
     {
         _heartbeatTimer?.Dispose();
+    }
+
+
+    /// <summary>
+    /// Checks whether the server is considered online based on the last received heartbeat.
+    /// </summary>
+    /// <returns>
+    /// <c>true</c> if the server is online and requests can be sent; 
+    /// <c>false</c> if the server is offline, in which case a message is appended to the UI.
+    /// </returns>
+    /// <remarks>
+    /// This method uses the <see cref="ServerOnline"/> property to determine the server status.
+    /// If the server is offline, it notifies the user via the UI callback and blocks further requests.
+    /// </remarks>
+    private bool EnsureServerOnline()
+    {
+        if (!ServerOnline)
+        {
+            _appendMessageCallback("[ERROR] Server offline - request blocked.", "Red");
+            return false;
+        }
+        return true;
     }
 }

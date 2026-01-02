@@ -59,7 +59,8 @@ public class ChatUI
             Y = 0,
             Width = Dim.Fill(),
             Height = Dim.Fill() - inputFrameHeight,
-            ShowVerticalScrollIndicator = true,
+            ShowVerticalScrollIndicator = false,
+            ShowHorizontalScrollIndicator = false,
             ColorScheme = new ColorScheme
             {
                 Normal = Application.Driver.MakeAttribute(Color.Black, Color.White) // Default text colors
@@ -92,8 +93,8 @@ public class ChatUI
 
         // --- Start backend logic ---
         _logic.SubscribeEvents();  // Listen for incoming messages/events
-        _logic.StartHeartbeat();   // Start periodic heartbeat for connection monitoring
-        _ = _logic.HandleUsersCommand(); // Display user list after joining
+        _logic.StartClientHeartbeat();   // Start periodic heartbeat for connection monitoring
+        _ = _logic.HandleUsersCommandAsync(); // Display user list after joining
 
         // Add main window and start the application loop
         top.Add(win);
@@ -135,25 +136,40 @@ public class ChatUI
                 {
                     case "/quit":
                         // Stop heartbeat and close the application
-                        _logic.StopHeartbeat();
+                        _logic.StopClientHeartbeat();
                         Application.RequestStop();
                         break;
 
                     case "/stats":
                         // Handle /stats command
-                        await _logic.HandleStatisticsCommand();
-                        break;
-
-                    case "/sendfile":
-                        // Extract file path and send file
                         try
                         {
-                            string filePath = text.Substring(10).Trim();
-                            await _logic.HandleSendFile(filePath);
+                            await _logic.HandleStatisticsCommandAsync();
                         }
                         catch (Exception)
                         {
-                            AppendMessage($"[ERROR] Failed to send file. Please try again.", "red");
+                            AppendMessage("[ERROR] Failed to retrieve chat statistics. Please try again.", "red");
+                        }
+                        break;
+
+                    case "/sendfile":
+                    // Handle /sendfile command
+                        try
+                        {
+                            // Check if the message contains a filepath
+                            string filePath = text.Length > 9 ? text.Substring(9).Trim() : "";
+
+                            if (string.IsNullOrWhiteSpace(filePath))
+                            {
+                                AppendMessage("[ERROR] Usage: /sendfile <path> - Please provide a file path.", "red");
+                                break;
+                            }
+
+                            await _logic.HandleSendFileAsync(filePath);
+                        }
+                        catch (Exception)
+                        {
+                            AppendMessage("[ERROR] Failed to send file. Please try again.", "red");
                         }
                         break;
 
@@ -177,7 +193,7 @@ public class ChatUI
                             else
                             {
                                 // Send private message to the specified user
-                                _logic.SendPrivateMessage(parts[0], parts[1]);
+                                _logic.SendPrivateMessageAsync(parts[0], parts[1]);
                             }
                             break;
                         }
@@ -191,7 +207,7 @@ public class ChatUI
                         // Handle /time command
                         try
                         {
-                            await _logic.HandleTimeCommand();
+                            await _logic.HandleTimeCommandAsync();
                             break;
                         }
                         catch (Exception)
@@ -204,7 +220,7 @@ public class ChatUI
                         // Handle /users command
                         try
                         {
-                            await _logic.HandleUsersCommand();
+                            await _logic.HandleUsersCommandAsync();
                             break;
                         }
                         catch (Exception)
@@ -237,7 +253,7 @@ public class ChatUI
             }
 
             // Send normal, public message to all users
-            _logic.SendMessage(text);
+            _logic.SendMessageAsync(text);
             e.Handled = true;
         }
         catch (Exception)
@@ -266,7 +282,7 @@ public class ChatUI
         var cs = new ColorScheme { Normal = attr };
 
         // Determine the maximum width for wrapping
-        int width = _messagesScroll.Frame.Width - 1;
+        int width = _messagesScroll.Frame.Width - 3;
 
         // Wrap the message text into lines that fit the width
         var lines = WrapText(message, width);
@@ -294,6 +310,9 @@ public class ChatUI
 
         // Refresh the ScrollView to display new content
         _messagesScroll.SetNeedsDisplay();
+
+        // Automatically scroll to the bottom after sending a message
+        _messagesScroll.ScrollDown(_messageCount - _messagesScroll.Frame.Height + 1);
     }
 
 
@@ -350,16 +369,40 @@ public class ChatUI
     /// </returns>
     public Dialog ShowSaveFileDialog(BroadcastFileEvent file)
     {
-        var dialog = new Dialog("File received", 60, 7);
+        // --- Dynamically set dialog width to terminal width (max 65 for readability) ---
+        int terminalWidth = Application.Driver.Cols;
+        int dialogWidth = Math.Min(terminalWidth - 5, 65); // leave some margin
+        int dialogHeight = 7;
 
-        var label = new Label($"Save file '{file.FileName}'?") { X = 1, Y = 1 };
+        // --- Create base color schemes ---
+        var normalAttr = Application.Driver.MakeAttribute(Color.Black, Color.White);
+        var focusedAttr = Application.Driver.MakeAttribute(Color.White, Color.Black);
 
-        var yesButton = new Button("Yes") { X = 10, Y = 3 };
+        var normalCS = new ColorScheme { Normal = normalAttr };
+        var focusedCS = new ColorScheme { Normal = focusedAttr };
+
+        var dialog = new Dialog("File received", dialogWidth, dialogHeight);
+
+        // --- Center the label in the dialog ---
+        var labelText = $"Save file '{file.FileName}'?";
+        int labelX = Math.Max((dialogWidth - labelText.Length) / 2, 1);
+        var label = new Label(labelText)
+        {
+            X = labelX,
+            Y = 1
+        };
+
+        // --- Yes button ---
+        var yesButton = new Button("Yes")
+        {
+            X = dialogWidth / 2 - 10,
+            Y = 3
+        };
         yesButton.Clicked += async () =>
         {
             try
             {
-                await _logic.SaveFile(file); // Save the file asynchronously
+                await _logic.SaveFileAsync(file); // Save file asynchronously
             }
             catch (Exception)
             {
@@ -367,12 +410,17 @@ public class ChatUI
             }
             finally
             {
-                _inputField.SetFocus(); // Return focus to the input field
-                Application.RequestStop(); // Close the dialog
+                _inputField.SetFocus();       // Return focus to input field
+                Application.RequestStop();    // Close the dialog
             }
         };
 
-        var noButton = new Button("No") { X = 20, Y = 3 };
+        // --- No button ---
+        var noButton = new Button("No")
+        {
+            X = dialogWidth / 2 + 2,
+            Y = 3,
+        };
         noButton.Clicked += () =>
         {
             _inputField.SetFocus();
@@ -384,7 +432,6 @@ public class ChatUI
 
         return dialog;
     }
-
 
     /// <summary>
     /// Maps a color name string to the corresponding <see cref="Color"/> value.

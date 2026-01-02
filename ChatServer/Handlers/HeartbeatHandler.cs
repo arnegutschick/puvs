@@ -7,7 +7,7 @@ namespace ChatServer.Handlers;
 
 /// <summary>
 /// Handler for heartbeat messages from clients.
-/// Subscribes to <see cref="Heartbeat"/> events and updates the user's last heartbeat timestamp
+/// Subscribes to <see cref="ClientHeatbeat"/> events and updates the user's last heartbeat timestamp
 /// via <see cref="HeartbeatService"/>.
 /// </summary>
 public class HeartbeatHandler
@@ -32,13 +32,13 @@ public class HeartbeatHandler
 
     /// <summary>
     /// Starts the subscription to heartbeat messages.
-    /// Each received <see cref="Heartbeat"/> event updates the user's heartbeat timestamp.
+    /// Each received <see cref="ClientHeatbeat"/> event updates the user's heartbeat timestamp.
     /// </summary>
     /// <returns>A <see cref="Task"/> representing the asynchronous subscription registration.</returns>
     public Task StartAsync()
     {
         // Subscribe to heartbeat events
-        return _bus.PubSub.SubscribeAsync<Heartbeat>(
+        return _bus.PubSub.SubscribeAsync<ClientHeatbeat>(
             SubscriptionId,
             HandleAsync
         );
@@ -46,11 +46,11 @@ public class HeartbeatHandler
     
 
     /// <summary>
-    /// Handles an incoming <see cref="Heartbeat"/> event by updating the user's heartbeat.
+    /// Handles an incoming <see cref="ClientHeatbeat"/> event by updating the user's heartbeat.
     /// </summary>
     /// <param name="heartbeat">The heartbeat event containing the username.</param>
     /// <returns>A completed <see cref="Task"/>.</returns>
-    private Task HandleAsync(Heartbeat heartbeat)
+    private Task HandleAsync(ClientHeatbeat heartbeat)
     {
         if (heartbeat == null)
         {
