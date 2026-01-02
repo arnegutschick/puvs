@@ -204,21 +204,14 @@ public class ChatLogic
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task HandleTimeCommand()
     {
-        try
+        // Request current server time via RPC
+        var res = await _bus.Rpc.RequestAsync<TimeRequest, TimeResponse>(
+            new TimeRequest(Username)
+        );
+        if (res.IsSuccess)
         {
-            // Request current server time via RPC
-            var res = await _bus.Rpc.RequestAsync<TimeRequest, TimeResponse>(
-                new TimeRequest()
-            );
-
             // Display the server time in the chat
             _appendMessageCallback($"[INFO] Current server time: {res.CurrentTime}", "Black");
-        }
-        catch (Exception ex)
-        {
-            _appendMessageCallback(
-                $"[ERROR] Time couldn't be fetched: {ex.Message}", "red"
-            );
         }
     }
 
@@ -231,15 +224,16 @@ public class ChatLogic
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task HandleStatisticsCommand()
     {
-        try
-        {
-            // Request statistics from the server via RPC
-            var res = await _bus.Rpc.RequestAsync<
-                StatisticsRequest,
-                StatisticsResponse>(
-                    new StatisticsRequest(Username)
-                );
 
+        // Request statistics from the server via RPC
+        var res = await _bus.Rpc.RequestAsync<
+            StatisticsRequest,
+            StatisticsResponse>(
+                new StatisticsRequest(Username)
+            );
+
+        if (res.IsSuccess)
+        {
             // Display statistics
             _appendMessageCallback("=== Statistics ===", "Black");
             _appendMessageCallback($"Total Messages: {res.TotalMessages}", "Black");
@@ -261,12 +255,6 @@ public class ChatLogic
             }
 
             _appendMessageCallback("================", "Black");
-        }
-        catch (Exception ex)
-        {
-            _appendMessageCallback(
-                $"[ERROR] Statistics couldn't be fetched: {ex.Message}", "red"
-            );
         }
     }
 

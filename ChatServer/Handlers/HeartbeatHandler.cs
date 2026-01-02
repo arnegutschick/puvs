@@ -52,8 +52,33 @@ public class HeartbeatHandler
     /// <returns>A completed <see cref="Task"/>.</returns>
     private Task HandleAsync(Heartbeat heartbeat)
     {
-        // Delegate to HeartbeatService to update last heartbeat timestamp
-        _service.Handle(heartbeat.Username);
+        if (heartbeat == null)
+        {
+            Console.WriteLine("[WARNING] Received null Heartbeat event");
+            return Task.CompletedTask;
+        }
+
+        try
+        {
+            // Delegate to HeartbeatService to update last heartbeat timestamp
+            _service.Handle(heartbeat.Username);
+        }
+        catch (Exception ex)
+        {
+            // Log the error on the server
+            Console.WriteLine(
+                $"[ERROR] Failed to process heartbeat for user '{heartbeat.Username}': {ex}"
+            );
+
+            // Notify the client about the failure
+            string senderTopic = TopicNames.CreatePrivateUserTopicName(heartbeat.Username);
+            var errorEvent = new ErrorEvent(
+                $"Failed to process your heartbeat: {ex.Message}"
+            );
+
+            return _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+        }
+
         return Task.CompletedTask;
     }
 }

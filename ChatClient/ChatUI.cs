@@ -109,95 +109,126 @@ public class ChatUI
     /// </param>
     private async void OnInputKeyPress(View.KeyEventEventArgs e)
     {
-        // Only handle Enter key; ignore other keys
-        if (e.KeyEvent.Key != Key.Enter) return;
-
-        // Get input text and clear the field
-        string text = _inputField.Text?.ToString() ?? "";
-        _inputField.Text = "";
-
-        // Ignore empty or whitespace-only input
-        if (string.IsNullOrWhiteSpace(text))
+        try
         {
-            e.Handled = true;
-            return;
-        }
+            // Only handle Enter key; ignore other keys
+            if (e.KeyEvent.Key != Key.Enter) return;
 
-        // --- Commands start with "/" ---
-        if (text.StartsWith("/"))
-        {
-            string command = text.Split(' ', 2)[0].ToLowerInvariant(); // Extract command
+            // Get input text and clear the field
+            string text = _inputField.Text?.ToString() ?? "";
+            _inputField.Text = "";
 
-            switch (command)
+            // Ignore empty or whitespace-only input
+            if (string.IsNullOrWhiteSpace(text))
             {
-                case "/quit":
-                    // Stop heartbeat and close the application
-                    _logic.StopHeartbeat();
-                    Application.RequestStop();
-                    break;
-
-                case "/stats":
-                    // Handle /stats command
-                    await _logic.HandleStatisticsCommand();
-                    break;
-
-                case "/sendfile":
-                    // Extract file path and send file
-                    string filePath = text.Substring(10).Trim();
-                    await _logic.HandleSendFile(filePath);
-                    break;
-
-                case "/msg":
-                    // Private message command: /msg <username> <message>
-                    if (text.Length <= 5)
-                    {
-                        AppendMessage("[ERROR] Usage: /msg <username> <message>", "red");
-                        break;
-                    }
-
-                    string payload = text.Substring(5).Trim();
-                    string[] parts = payload.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-
-                    if (parts.Length < 2)
-                    {
-                        AppendMessage("[ERROR] Usage: /msg <username> <message>", "red");
-                    }
-                    else
-                    {
-                        // Send private message to the specified user
-                        _logic.SendPrivateMessage(parts[0], parts[1]);
-                    }
-                    break;
-
-                case "/help":
-                    // Display available commands - using seperate messages for each command to ensure correct message display in chat UI
-                    AppendMessage("[INFO] Available commands:", "Black");
-                    AppendMessage("/quit        - Quit the chat application", "Black");
-                    AppendMessage("/stats       - Show chat statistics", "Black");
-                    AppendMessage("/sendfile <path> - Send a file to all users", "Black");
-                    AppendMessage("/msg <user> <msg> - Send a private message to a user", "Black");
-                    AppendMessage("/time        - Show current server time", "Black");
-                    AppendMessage("/help        - Show this help message", "Black");
-                    break;
-
-                case "/time":
-                    // Handle /time command
-                    await _logic.HandleTimeCommand();
-                    break;
-
-                default:
-                    // Handle unknown command
-                    AppendMessage($"[ERROR] Unknown command '{command}'. Use /help for a list of commands.", "red");
-                    break;
+                e.Handled = true;
+                return;
             }
 
-            e.Handled = true; // Prevent further processing
-            return;
-        }
+            // --- Commands start with "/" ---
+            if (text.StartsWith("/"))
+            {
+                string command = text.Split(' ', 2)[0].ToLowerInvariant(); // Extract command
 
-        // Send normal, public message to all users
-        _logic.SendMessage(text);
-        e.Handled = true;
+                switch (command)
+                {
+                    case "/quit":
+                        // Stop heartbeat and close the application
+                        _logic.StopHeartbeat();
+                        Application.RequestStop();
+                        break;
+
+                    case "/stats":
+                        // Handle /stats command
+                        await _logic.HandleStatisticsCommand();
+                        break;
+
+                    case "/sendfile":
+                        // Extract file path and send file
+                        try
+                        {
+                            string filePath = text.Substring(10).Trim();
+                            await _logic.HandleSendFile(filePath);
+                        }
+                        catch (Exception)
+                        {
+                            AppendMessage($"[ERROR] Failed to send file. Please try again.", "red");
+                        }
+                        break;
+
+                    case "/msg":
+                        // Private message command: /msg <username> <message>
+                        try
+                        {
+                            if (text.Length <= 5)
+                            {
+                                AppendMessage("[ERROR] Usage: /msg <username> <message>", "red");
+                                break;
+                            }
+
+                            string payload = text.Substring(5).Trim();
+                            string[] parts = payload.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+
+                            if (parts.Length < 2)
+                            {
+                                AppendMessage("[ERROR] Usage: /msg <username> <message>", "red");
+                            }
+                            else
+                            {
+                                // Send private message to the specified user
+                                _logic.SendPrivateMessage(parts[0], parts[1]);
+                            }
+                            break;
+                        }
+                        catch (Exception)
+                        {
+                            AppendMessage($"[ERROR] Failed to send private message: Please try again.", "red");
+                        }
+                        break;
+
+                    case "/help":
+                        // Display available commands - using seperate messages for each command to ensure correct message display in chat UI
+                        AppendMessage("[INFO] Available commands:", "Black");
+                        AppendMessage("/quit        - Quit the chat application", "Black");
+                        AppendMessage("/stats       - Show chat statistics", "Black");
+                        AppendMessage("/sendfile <path> - Send a file to all users", "Black");
+                        AppendMessage("/msg <user> <msg> - Send a private message to a user", "Black");
+                        AppendMessage("/time        - Show current server time", "Black");
+                        AppendMessage("/help        - Show this help message", "Black");
+                        break;
+
+                    case "/time":
+                        // Handle /time command
+                        try
+                        {
+                            await _logic.HandleTimeCommand();
+                            break;
+                        }
+                        catch (Exception)
+                        {
+                            AppendMessage($"[ERROR] Failed to request current time. Please try again", "red");
+                        }
+                        break;
+
+                    default:
+                        // Handle unknown command
+                        AppendMessage($"[ERROR] Unknown command '{command}'. Use /help for a list of commands.", "red");
+                        break;
+                }
+
+                e.Handled = true; // Prevent further processing
+                return;
+            }
+
+            // Send normal, public message to all users
+            _logic.SendMessage(text);
+            e.Handled = true;
+        }
+        catch (Exception)
+        {
+            // Log and show error in chat window
+            AppendMessage($"[ERROR] An exception occured while processing input.", "red");
+        }
     }
 
 
@@ -310,9 +341,19 @@ public class ChatUI
         var yesButton = new Button("Yes") { X = 10, Y = 3 };
         yesButton.Clicked += async () =>
         {
-            await _logic.SaveFile(file);  // Save the file asynchronously
-            _inputField.SetFocus();        // Return focus to the input field
-            Application.RequestStop();     // Close the dialog
+            try
+            {
+                await _logic.SaveFile(file); // Save the file asynchronously
+            }
+            catch (Exception)
+            {
+                AppendMessage($"[ERROR] Failed to save file. Please ask the user to resend the file.", "red");
+            }
+            finally
+            {
+                _inputField.SetFocus(); // Return focus to the input field
+                Application.RequestStop(); // Close the dialog
+            }
         };
 
         var noButton = new Button("No") { X = 20, Y = 3 };

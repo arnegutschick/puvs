@@ -51,8 +51,34 @@ public class PrivateMessageHandler
     /// </summary>
     /// <param name="command">The private message command containing sender, recipient, and text.</param>
     /// <returns>A <see cref="Task"/> representing the asynchronous handling operation.</returns>
-    private Task HandleAsync(SendPrivateMessageCommand command)
+    private async Task HandleAsync(SendPrivateMessageCommand command)
     {
-        return _service.HandleAsync(command);
+        if (command == null)
+        {
+            Console.WriteLine("[WARNING] Received null SendPrivateMessageCommand");
+            return;
+        }
+        
+        try
+        {
+            // Delegate message processing to the service
+            await _service.HandleAsync(command);
+        }
+        catch (Exception ex)
+        {
+            // Log the error on the server
+            Console.WriteLine(
+                $"[ERROR] Failed to process private message from '{command.SenderUsername}' " +
+                $"to '{command.RecipientUsername}': {ex}"
+            );
+
+            // Notify the sender client about the failure
+            string senderTopic = TopicNames.CreatePrivateUserTopicName(command.SenderUsername);
+            var errorEvent = new ErrorEvent(
+                $"Failed to send private message to '{command.RecipientUsername}'. Please try again."
+            );
+
+            await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+        }
     }
 }

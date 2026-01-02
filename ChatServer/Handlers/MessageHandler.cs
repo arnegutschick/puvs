@@ -51,8 +51,33 @@ public class MessageHandler
     /// </summary>
     /// <param name="command">The public message command containing sender and text.</param>
     /// <returns>A <see cref="Task"/> representing the asynchronous handling operation.</returns>
-    private Task HandleAsync(SubmitMessageCommand command)
+    private async Task HandleAsync(SubmitMessageCommand command)
     {
-        return _service.HandleAsync(command);
+        if (command == null)
+        {
+            Console.WriteLine("[WARNING] Received null SubmitMessageCommand");
+            return;
+        }
+
+        try
+        {
+            // Delegate message processing to the service
+            await _service.HandleAsync(command);
+        }
+        catch (Exception ex)
+        {
+            // Log the error on the server
+            Console.WriteLine(
+                $"[ERROR] Failed to process public message from '{command.SenderUsername}': {ex}"
+            );
+
+            // Notify the sender client about the failure
+            string senderTopic = TopicNames.CreatePrivateUserTopicName(command.SenderUsername);
+            var errorEvent = new ErrorEvent(
+                $"Failed to send your message: {ex.Message}"
+            );
+
+            await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+        }
     }
 }

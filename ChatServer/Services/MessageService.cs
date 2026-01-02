@@ -41,8 +41,14 @@ public class MessageService
     /// <param name="command">The <see cref="SubmitMessageCommand"/> containing the username and text.</param>
     public async Task HandleAsync(SubmitMessageCommand command)
     {
+        if (command == null)
+        {
+            Console.WriteLine("[WARNING] Received null SubmitMessageCommand");
+            return;
+        }
+
         Console.WriteLine(
-            $"Received message from '{command.Username}': '{command.Text}'"
+            $"Received message from '{command.SenderUsername}': '{command.Text}'"
         );
 
         // Normalize and trim the message text
@@ -50,16 +56,16 @@ public class MessageService
 
         // --- Record statistics only for regular messages ---
         if (!text.StartsWith("/"))
-            _stats.RecordMessage(command.Username);
+            _stats.RecordMessage(command.SenderUsername);
 
         // --- Determine user's color, default to Black if unknown ---
-        string color = _users.TryGetValue(command.Username, out var user)
+        string color = _users.TryGetValue(command.SenderUsername, out var user)
             ? user.Color
             : "Black";
 
         // --- Create broadcast event ---
         var evt = new BroadcastMessageEvent(
-            command.Username,
+            command.SenderUsername,
             text,
             color
         );

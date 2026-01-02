@@ -1,4 +1,5 @@
 using Chat.Contracts;
+using Chat.Contracts.Infrastructure;
 using ChatServer.Services;
 using EasyNetQ;
 
@@ -44,22 +45,50 @@ public class StatisticsHandler
     /// <param name="request">The statistics request containing the requesting user's username.</param>
     /// <returns>A <see cref="Task{StatisticsResponse}"/> containing the total messages,
     /// average messages per user, and the top 3 most active users.</returns>
-    private Task<StatisticsResponse> HandleAsync(StatisticsRequest request)
+    private async Task<StatisticsResponse> HandleAsync(StatisticsRequest request)
     {
-        Console.WriteLine($"Received statistics request from {request.RequestingUser}.");
+        if (request == null)
+        {
+            Console.WriteLine("[WARNING] Received null StatisticsRequest");
+            return new StatisticsResponse(false, 0, 0, new List<TopChatterDto>());
+        }
 
-        // Get the statistics snapshot
-        var (total, avg, top3) = _service.Snapshot();
+        try
+        {
+            Console.WriteLine($"Received statistics request from {request.RequestingUser}.");
 
-        // Build the response DTO
-        var response = new StatisticsResponse(
-            TotalMessages: total,
-            AvgMessagesPerUser: avg,
-            Top3: top3.Select(t => new TopChatterDto(t.User, t.MessageCount)).ToList()
-        );
+            // Get the statistics snapshot
+            var (total, avg, top3) = _service.Snapshot();
 
-        Console.WriteLine($"Sent statistics response to {request.RequestingUser}.");
+            // Build the response DTO
+            var response = new StatisticsResponse(
+                IsSuccess: true,
+                TotalMessages: total,
+                AvgMessagesPerUser: avg,
+                Top3: top3.Select(t => new TopChatterDto(t.UserName, t.MessageCount)).ToList()
+            );
 
-        return Task.FromResult(response);
+            Console.WriteLine($"Sent statistics response to {request.RequestingUser}.");
+
+            return response;
+        }
+        catch (Exception ex)
+        {
+            // Log the error on the server
+            Console.WriteLine(
+                $"[ERROR] Failed to process statistics request from '{request.RequestingUser}': {ex}"
+            );
+
+            // Notify the requesting user about the failure via ErrorEvent
+            string senderTopic = TopicNames.CreatePrivateUserTopicName(request.RequestingUser);
+            var errorEvent = new ErrorEvent(
+                $"Failed to retrieve statistics. Please try again."
+            );
+
+            await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+
+            // Return empty/default statistics to avoid crashing the RPC call
+            return new StatisticsResponse(false, 0, 0, new List<TopChatterDto>());
+        }
     }
 }

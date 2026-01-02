@@ -51,8 +51,34 @@ public class FileHandler
     /// </summary>
     /// <param name="command">The file command containing sender, file name, content, and size.</param>
     /// <returns>A <see cref="Task"/> representing the asynchronous handling operation.</returns>
-    private Task HandleAsync(SendFileCommand command)
+    private async Task HandleAsync(SendFileCommand command)
     {
-        return _service.HandleAsync(command);
+        if (command == null)
+        {
+            Console.WriteLine("[WARNING] Received null SendFileCommand");
+            return;
+        }
+
+        try
+        {
+            // Delegate file processing to the service
+            await _service.HandleAsync(command);
+        }
+        catch (Exception ex)
+        {
+            // Log the error on the server
+            Console.WriteLine(
+                $"[ERROR] Failed to process file from '{command.SenderUsername}' " +
+                $"('{command.FileName}', {command.FileSizeBytes} bytes): {ex}"
+            );
+
+            // Notify the sender client about the failure
+            string senderTopic = TopicNames.CreatePrivateUserTopicName(command.SenderUsername);
+            var errorEvent = new ErrorEvent(
+                $"Failed to send file '{command.FileName}': {ex.Message}"
+            );
+
+            await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+        }
     }
 }
