@@ -12,6 +12,10 @@ public class HeartbeatService
 {
     private readonly UserService _users;
     private readonly IBus _bus;
+
+    private Timer? _serverHeartbeatTimer;
+    private IConfiguration _configuration;
+
     private readonly TimeSpan _timeout;
 
     /// <summary>
@@ -24,6 +28,7 @@ public class HeartbeatService
     {
         _users = users;
         _bus = bus;
+        _configuration = configuration;
 
         // Get heartbeat timeout from configuration, default to 30 seconds
         int timeoutSeconds = configuration.GetValue("ChatSettings:HeartbeatTimeoutSeconds", 30);
@@ -43,55 +48,84 @@ public class HeartbeatService
 
 
     /// <summary>
+    /// Starts periodically sending server heartbeat events to all clients.
+    /// This allows clients to detect whether the server is online or offline.
+    /// The interval is configurable via "ChatSettings:ServerHeartbeatIntervalSeconds" in appsettings.json.
+    /// </summary>
+    public void StartServerHeartbeat()
+    {
+        int intervalSeconds = _configuration.GetValue("ChatSettings:ServerHeartbeatIntervalSeconds", 30);
+        _serverHeartbeatTimer = new Timer(_ =>
+        {
+            try
+            {
+                _bus.PubSub.Publish(new ServerHeartbeat(DateTime.UtcNow));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Failed to send ServerHeartbeat: {ex}");
+            }
+        }, null, TimeSpan.Zero, TimeSpan.FromSeconds(intervalSeconds));
+    }
+
+
+    /// <summary>
+    /// Stops sending server heartbeat events to clients by disposing the underlying timer.
+    /// Should be called when the server is shutting down to prevent lingering timers.
+    /// </summary>
+    public void StopServerHeartbeat()
+    {
+        _serverHeartbeatTimer?.Dispose();
+    }
+
+
+    /// <summary>
     /// Starts a background task that periodically checks for timed-out users.
     /// Removes timed-out users and publishes <see cref="UserNotification"/> events.
     /// </summary>
     /// <param name="token">Optional cancellation token to stop the cleanup loop.</param>
     /// <returns>A Task representing the background cleanup loop.</returns>
-    public Task StartCleanupTask(CancellationToken token = default)
+    public async Task StartCleanupTask(CancellationToken token)
     {
-        return Task.Run(async () =>
+        while (!token.IsCancellationRequested)
         {
-            while (!token.IsCancellationRequested)
+            try
             {
-                try
+                await Task.Delay(_timeout, token);
+
+                var timedOut = _users.GetTimedOut(_timeout);
+
+                foreach (var username in timedOut)
                 {
-                    await Task.Delay(_timeout, token);
-
-                    var timedOut = _users.GetTimedOut(_timeout);
-
-                    foreach (var username in timedOut)
+                    try
                     {
-                        try
+                        if (_users.Remove(username))
                         {
-                            if (_users.Remove(username))
-                            {
-                                Console.WriteLine($"User '{username}' has timed out.");
+                            Console.WriteLine($"User '{username}' has timed out.");
 
-                                await _bus.PubSub.PublishAsync(
-                                    new UserNotification(
-                                        $"User '{username}' has left the chat due to timeout."
-                                    )
-                                );
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"[ERROR] Failed to remove or notify user '{username}': {ex}");
+                            await _bus.PubSub.PublishAsync(
+                                new UserNotification(
+                                    $"User '{username}' has left the chat due to timeout."
+                                )
+                            );
                         }
                     }
-                }
-                catch (TaskCanceledException)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[ERROR] Heartbeat cleanup task failed: {ex}");
-                    // Add small delay before retry
-                    await Task.Delay(TimeSpan.FromSeconds(1), token);
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[ERROR] Failed to remove or notify user '{username}': {ex}");
+                    }
                 }
             }
-        }, token);
+            catch (TaskCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Heartbeat cleanup task failed: {ex}");
+                // Add small delay before retry
+                await Task.Delay(TimeSpan.FromSeconds(1), token);
+            }
+        }
     }
 }
