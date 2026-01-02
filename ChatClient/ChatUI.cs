@@ -93,6 +93,7 @@ public class ChatUI
         // --- Start backend logic ---
         _logic.SubscribeEvents();  // Listen for incoming messages/events
         _logic.StartHeartbeat();   // Start periodic heartbeat for connection monitoring
+        _ = _logic.HandleUsersCommand(); // Display user list after joining
 
         // Add main window and start the application loop
         top.Add(win);
