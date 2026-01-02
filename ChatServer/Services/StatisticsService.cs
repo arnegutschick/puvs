@@ -18,6 +18,12 @@ public class StatisticsService
     /// <param name="username">The username to register.</param>
     public void RegisterUser(string username)
     {
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            Console.WriteLine("[WARNING] Attempted to register null or empty username in StatisticsService.");
+            return;
+        }
+        
         _userMessageCounts.TryAdd(username, 0);
     }
 
@@ -29,7 +35,12 @@ public class StatisticsService
     /// <param name="username">The username of the sender.</param>
     public void RecordMessage(string username)
     {
-        // Add new user with count 1, or increment existing count
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            Console.WriteLine("[WARNING] Attempted to record message for null or empty username in StatisticsService.");
+            return;
+        }
+
         _userMessageCounts.AddOrUpdate(username, 1, (_, c) => c + 1);
     }
 

@@ -54,26 +54,42 @@ public class HeartbeatService
         {
             while (!token.IsCancellationRequested)
             {
-                // Wait for the configured heartbeat timeout interval
-                await Task.Delay(_timeout, token);
-
-                // Get all users who have not updated their heartbeat within the timeout
-                var timedOut = _users.GetTimedOut(_timeout);
-
-                foreach (var username in timedOut)
+                try
                 {
-                    // Remove timed-out users
-                    if (_users.Remove(username))
-                    {
-                        Console.WriteLine($"User '{username}' has timed out.");
+                    await Task.Delay(_timeout, token);
 
-                        // Notify all clients that the user has left due to timeout
-                        await _bus.PubSub.PublishAsync(
-                            new UserNotification(
-                                $"User '{username}' has left the chat (timeout)."
-                            )
-                        );
+                    var timedOut = _users.GetTimedOut(_timeout);
+
+                    foreach (var username in timedOut)
+                    {
+                        try
+                        {
+                            if (_users.Remove(username))
+                            {
+                                Console.WriteLine($"User '{username}' has timed out.");
+
+                                await _bus.PubSub.PublishAsync(
+                                    new UserNotification(
+                                        $"User '{username}' has left the chat (timeout)."
+                                    )
+                                );
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[ERROR] Failed to remove or notify user '{username}': {ex}");
+                        }
                     }
+                }
+                catch (TaskCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ERROR] Heartbeat cleanup task failed: {ex}");
+                    // Add small delay before retry
+                    await Task.Delay(TimeSpan.FromSeconds(1), token);
                 }
             }
         }, token);

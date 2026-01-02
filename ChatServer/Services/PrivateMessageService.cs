@@ -37,6 +37,12 @@ public class PrivateMessageService
     /// <param name="command">The <see cref="SendPrivateMessageCommand"/> containing sender, recipient, and message text.</param>
     public async Task HandleAsync(SendPrivateMessageCommand command)
     {
+        if (command == null)
+        {
+            Console.WriteLine("[WARNING] Received null SendPrivateMessageCommand");
+            return;
+        }
+
         Console.WriteLine(
             $"Private message from '{command.SenderUsername}' to '{command.RecipientUsername}': '{command.Text}'"
         );

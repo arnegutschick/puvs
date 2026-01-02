@@ -30,13 +30,19 @@ public class FileService
     /// <param name="command">The <see cref="SendFileCommand"/> containing sender, file name, content, and size.</param>
     public async Task HandleAsync(SendFileCommand command)
     {
+        if (command == null)
+        {
+            Console.WriteLine("[WARNING] Received null SendFileCommand");
+            return;
+        }
+
         Console.WriteLine(
-            $"File received from '{command.Sender}': {command.FileName} ({command.FileSizeBytes} bytes)"
+            $"File received from '{command.SenderUsername}': {command.FileName} ({command.FileSizeBytes} bytes)"
         );
 
         // Create the event to broadcast the file to all clients
         var fileEvent = new BroadcastFileEvent(
-            command.Sender,
+            command.SenderUsername,
             command.FileName,
             command.ContentBase64,
             command.FileSizeBytes
