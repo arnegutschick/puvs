@@ -1,4 +1,5 @@
 using Terminal.Gui;
+using Chat.Contracts;
 
 namespace ChatClient;
 
@@ -169,17 +170,14 @@ public class ChatUI
                     break;
 
                 case "/help":
-                    // Display available commands
-                    AppendMessage(
-                        "[INFO] Available commands:" + Environment.NewLine +
-                        "/quit        - Quit the chat application" + Environment.NewLine +
-                        "/stats       - Show chat statistics" + Environment.NewLine +
-                        "/sendfile <path> - Send a file to all users" + Environment.NewLine +
-                        "/msg <user> <msg> - Send a private message to a user" + Environment.NewLine +
-                        "/help        - Show this help message" + Environment.NewLine +
-                        "/time        - Show current server time",
-                        "Black"
-                    );
+                    // Display available commands - using seperate messages for each command to ensure correct message display in chat UI
+                    AppendMessage("[INFO] Available commands:", "Black");
+                    AppendMessage("/quit        - Quit the chat application", "Black");
+                    AppendMessage("/stats       - Show chat statistics", "Black");
+                    AppendMessage("/sendfile <path> - Send a file to all users", "Black");
+                    AppendMessage("/msg <user> <msg> - Send a private message to a user", "Black");
+                    AppendMessage("/time        - Show current server time", "Black");
+                    AppendMessage("/help        - Show this help message", "Black");
                     break;
 
                 case "/time":

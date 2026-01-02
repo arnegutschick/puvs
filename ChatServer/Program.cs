@@ -57,7 +57,7 @@ internal class Program
         var timeHandler = new TimeHandler(bus);
 
         // Start listening to events asynchronously
-        userHandler.Start();
+        await userHandler.StartAsync();
         await messageHandler.StartAsync();
         await privateMessageHandler.StartAsync();
         await fileHandler.StartAsync();

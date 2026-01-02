@@ -32,7 +32,7 @@ public class UserHandler
     /// <summary>
     /// Starts the login and logout handlers.
     /// </summary>
-    public async Task Start()
+    public async Task StartAsync()
     {
         await StartLogin();
         await StartLogout();

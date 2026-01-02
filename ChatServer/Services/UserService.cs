@@ -60,7 +60,7 @@ public class UserService
         Console.WriteLine($"User '{username}' logged in successfully with color '{assignedColor}'.");
 
         // --- Notify other users ---
-        await bus.PubSub.PublishAsync(new UserNotification($"*** User '{username}' has joined the chat. ***"));
+        await bus.PubSub.PublishAsync(new UserNotification($"User '{username}' has joined the chat."));
 
         return new LoginResponse(true, string.Empty);
     }
@@ -78,7 +78,7 @@ public class UserService
         {
             Console.WriteLine($"User '{request.Username}' logged out.");
             await bus.PubSub.PublishAsync(new UserNotification(
-                $"*** User '{request.Username}' has left the chat. ***"
+                $"User '{request.Username}' has left the chat."
             ));
         }
     }

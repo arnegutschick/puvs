@@ -1,3 +1,4 @@
+using Chat.Contracts;
 using EasyNetQ;
 
 namespace ChatServer.Services;

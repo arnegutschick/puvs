@@ -70,7 +70,7 @@ public class HeartbeatService
                         // Notify all clients that the user has left due to timeout
                         await _bus.PubSub.PublishAsync(
                             new UserNotification(
-                                $"*** User '{username}' has left the chat (timeout). ***"
+                                $"User '{username}' has left the chat (timeout)."
                             )
                         );
                     }
