@@ -216,6 +216,32 @@ public class ChatLogic
     }
 
 
+    /// <summary>
+    /// Handles the /users command: requests the list of currently logged in users via RPC
+    /// and displays it in the chat message view.
+    /// </summary>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    public async Task HandleUsersCommand()
+    {
+        // Request current server time via RPC
+        var res = await _bus.Rpc.RequestAsync<UserListRequest, UserListResponse>(
+            new UserListRequest(Username)
+        );
+        if (res.IsSuccess)
+        {
+            // Display a list of all currently logged in members
+            _appendMessageCallback($"=== Currently logged in users ===", "Black");
+
+            foreach (string user in res.UserList)
+            {
+                _appendMessageCallback($"- {user}", "Black");
+            }
+
+            _appendMessageCallback("==================================", "Black");
+        }
+    }
+
+
 
     /// <summary>
     /// Handles the /stats command: requests chat statistics from the server
@@ -254,7 +280,7 @@ public class ChatLogic
                 }
             }
 
-            _appendMessageCallback("================", "Black");
+            _appendMessageCallback("=================", "Black");
         }
     }
 
