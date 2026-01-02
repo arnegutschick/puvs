@@ -54,6 +54,8 @@ public class PrivateMessageService
         // --- Check if recipient exists ---
         if (!_users.TryGetValue(recipientKey, out var recipientInfo))
         {
+            Console.WriteLine($"Aborted sending private message to non-existent user '{command.RecipientUsername}'.");
+
             // Publish error event to sender if recipient is offline or unknown
             var errorEvent = new ErrorEvent(
                 $"User '{command.RecipientUsername}' is not online or does not exist."
