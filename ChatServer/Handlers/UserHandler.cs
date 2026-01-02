@@ -45,9 +45,31 @@ public class UserHandler
     /// </summary>
     private async Task StartLogin()
     {
-        await _bus.Rpc.RespondAsync<LoginRequest, LoginResponse>(request =>
+        await _bus.Rpc.RespondAsync<LoginRequest, LoginResponse>(async request =>
         {
-            return _service.HandleLoginAsync(request, _bus);
+            if (request == null)
+            {
+                Console.WriteLine("[WARNING] Received null LoginRequest");
+                return new LoginResponse(false, "Invalid request");
+            }
+
+            try
+            {
+                return await _service.HandleLoginAsync(request, _bus);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Failed to process login for '{request.Username}': {ex}");
+
+                // Notify the client about the failure
+                string senderTopic = TopicNames.CreatePrivateUserTopicName(request.Username);
+                var errorEvent = new ErrorEvent(
+                    $"Login failed: {ex.Message}"
+                );
+                await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+
+                return new LoginResponse(false, "Login failed due to server error");
+            }
         });
     }
 
@@ -60,7 +82,30 @@ public class UserHandler
     {
         await _bus.PubSub.SubscribeAsync<LogoutRequest>(
             LogoutSubscriptionId,
-            async request => await _service.HandleLogoutAsync(request, _bus)
+            async request =>
+            {
+                if (request == null)
+                {
+                    Console.WriteLine("[WARNING] Received null LogoutRequest");
+                    return;
+                }
+
+                try
+                {
+                    await _service.HandleLogoutAsync(request, _bus);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[ERROR] Failed to process logout for '{request.Username}': {ex}");
+
+                    // Notify the client about the failure
+                    string senderTopic = TopicNames.CreatePrivateUserTopicName(request.Username);
+                    var errorEvent = new ErrorEvent(
+                        $"Logout failed: {ex.Message}"
+                    );
+                    await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+                }
+            }
         );
     }
 }

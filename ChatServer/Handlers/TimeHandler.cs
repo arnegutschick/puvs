@@ -1,4 +1,5 @@
 using Chat.Contracts;
+using Chat.Contracts.Infrastructure;
 using EasyNetQ;
 
 namespace ChatServer.Handlers;
@@ -38,9 +39,41 @@ public class TimeHandler
     /// </summary>
     /// <param name="request">The incoming time request (currently unused).</param>
     /// <returns>A <see cref="Task{TimeResponse}"/> containing the current server time.</returns>
-    private Task<TimeResponse> HandleAsync(TimeRequest request)
+    private async Task<TimeResponse> HandleAsync(TimeRequest request)
     {
-        // Return current server time immediately
-        return Task.FromResult(new TimeResponse(DateTime.Now));
+        if (request == null)
+        {
+            Console.WriteLine("[WARNING] Received null TimeRequest");
+            return new TimeResponse(false, DateTime.MinValue);
+        }
+
+        try
+        {
+            Console.WriteLine("Received time request.");
+
+            var response = new TimeResponse(true, DateTime.Now);
+
+            Console.WriteLine("Sent time response.");
+            return response;
+        }
+        catch (Exception ex)
+        {
+            // Log the error on the server
+            Console.WriteLine($"[ERROR] Failed to process time request: {ex}");
+
+            // Notify the requesting client via ErrorEvent
+            if (!string.IsNullOrWhiteSpace(request.SenderUsername))
+            {
+                string senderTopic = TopicNames.CreatePrivateUserTopicName(request.SenderUsername);
+                var errorEvent = new ErrorEvent(
+                    $"Failed to retrieve server time. Please try again."
+                );
+
+                await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+            }
+
+            // Return a fallback response
+            return new TimeResponse(false, DateTime.MinValue);
+        }
     }
 }
