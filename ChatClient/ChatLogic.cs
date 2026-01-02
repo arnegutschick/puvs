@@ -293,6 +293,12 @@ public class ChatLogic
     /// <returns>A task representing the asynchronous send operation.</returns>
     public async Task HandleSendFile(string path)
     {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            Console.WriteLine("[ERROR] Invalid file path.");
+            return;
+        }
+        
         // Check if the file exists
         if (!File.Exists(path))
         {
