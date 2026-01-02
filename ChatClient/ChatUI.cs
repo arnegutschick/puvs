@@ -94,7 +94,7 @@ public class ChatUI
         // --- Start backend logic ---
         _logic.SubscribeEvents();  // Listen for incoming messages/events
         _logic.StartHeartbeat();   // Start periodic heartbeat for connection monitoring
-        _ = _logic.HandleUsersCommand(); // Display user list after joining
+        _ = _logic.HandleUsersCommandAsync(); // Display user list after joining
 
         // Add main window and start the application loop
         top.Add(win);
@@ -144,7 +144,7 @@ public class ChatUI
                         // Handle /stats command
                         try
                         {
-                            await _logic.HandleStatisticsCommand();
+                            await _logic.HandleStatisticsCommandAsync();
                         }
                         catch (Exception)
                         {
@@ -165,7 +165,7 @@ public class ChatUI
                                 break;
                             }
 
-                            await _logic.HandleSendFile(filePath);
+                            await _logic.HandleSendFileAsync(filePath);
                         }
                         catch (Exception)
                         {
@@ -193,7 +193,7 @@ public class ChatUI
                             else
                             {
                                 // Send private message to the specified user
-                                _logic.SendPrivateMessage(parts[0], parts[1]);
+                                _logic.SendPrivateMessageAsync(parts[0], parts[1]);
                             }
                             break;
                         }
@@ -207,7 +207,7 @@ public class ChatUI
                         // Handle /time command
                         try
                         {
-                            await _logic.HandleTimeCommand();
+                            await _logic.HandleTimeCommandAsync();
                             break;
                         }
                         catch (Exception)
@@ -220,7 +220,7 @@ public class ChatUI
                         // Handle /users command
                         try
                         {
-                            await _logic.HandleUsersCommand();
+                            await _logic.HandleUsersCommandAsync();
                             break;
                         }
                         catch (Exception)
@@ -253,7 +253,7 @@ public class ChatUI
             }
 
             // Send normal, public message to all users
-            _logic.SendMessage(text);
+            _logic.SendMessageAsync(text);
             e.Handled = true;
         }
         catch (Exception)
@@ -402,7 +402,7 @@ public class ChatUI
         {
             try
             {
-                await _logic.SaveFile(file); // Save file asynchronously
+                await _logic.SaveFileAsync(file); // Save file asynchronously
             }
             catch (Exception)
             {

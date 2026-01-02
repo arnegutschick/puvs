@@ -154,7 +154,7 @@ public class ChatLogic
     /// Ignores empty or whitespace-only messages.
     /// </summary>
     /// <param name="text">The message text to send.</param>
-    public async void SendMessage(string text)
+    public async void SendMessageAsync(string text)
     {
         // Ensure text is not null
         text ??= "";
@@ -176,7 +176,7 @@ public class ChatLogic
     /// </summary>
     /// <param name="recipientUsername">The username of the message recipient.</param>
     /// <param name="text">The message content to send.</param>
-    public void SendPrivateMessage(string recipientUsername, string text)
+    public void SendPrivateMessageAsync(string recipientUsername, string text)
     {
         // Prevent sending a private message to oneself
         if (string.Equals(recipientUsername, Username, StringComparison.OrdinalIgnoreCase))
@@ -202,7 +202,7 @@ public class ChatLogic
     /// and displays it in the chat message view.
     /// </summary>
     /// <returns>A task representing the asynchronous operation.</returns>
-    public async Task HandleTimeCommand()
+    public async Task HandleTimeCommandAsync()
     {
         // Request current server time via RPC
         var res = await _bus.Rpc.RequestAsync<TimeRequest, TimeResponse>(
@@ -221,7 +221,7 @@ public class ChatLogic
     /// and displays it in the chat message view.
     /// </summary>
     /// <returns>A task representing the asynchronous operation.</returns>
-    public async Task HandleUsersCommand()
+    public async Task HandleUsersCommandAsync()
     {
         // Request current server time via RPC
         var res = await _bus.Rpc.RequestAsync<UserListRequest, UserListResponse>(
@@ -248,7 +248,7 @@ public class ChatLogic
     /// and displays them line by line in the message view.
     /// </summary>
     /// <returns>A task representing the asynchronous operation.</returns>
-    public async Task HandleStatisticsCommand()
+    public async Task HandleStatisticsCommandAsync()
     {
 
         // Request statistics from the server via RPC
@@ -291,7 +291,7 @@ public class ChatLogic
     /// </summary>
     /// <param name="path">The local path of the file to send.</param>
     /// <returns>A task representing the asynchronous send operation.</returns>
-    public async Task HandleSendFile(string path)
+    public async Task HandleSendFileAsync(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -337,7 +337,7 @@ public class ChatLogic
     /// </summary>
     /// <param name="file">The broadcast file event containing the file name and Base64-encoded content.</param>
     /// <returns>A task representing the asynchronous save operation.</returns>
-    public async Task SaveFile(BroadcastFileEvent file)
+    public async Task SaveFileAsync(BroadcastFileEvent file)
     {
         // Decode the Base64 content into a byte array
         byte[] data = Convert.FromBase64String(file.ContentBase64);
