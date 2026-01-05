@@ -35,13 +35,20 @@ public class PrivateMessageHandler
     /// Each received <see cref="SendPrivateMessageCommand"/> is handled asynchronously.
     /// </summary>
     /// <returns>A <see cref="Task"/> representing the asynchronous subscription registration.</returns>
-    public Task StartAsync()
+    public async Task StartAsync()
     {
-        // Subscribe to private message events
-        return _bus.PubSub.SubscribeAsync<SendPrivateMessageCommand>(
-            SubscriptionId,
-            HandleAsync
-        );
+        try
+        {
+            // Subscribe to private message events
+            await _bus.PubSub.SubscribeAsync<SendPrivateMessageCommand>(
+                SubscriptionId,
+                HandleAsync
+            );
+        }
+        catch (Exception)
+        {
+            Console.WriteLine($"[ERROR] Failed to start private message RPC. Maybe RabbitMQ is down?");
+        }
     }
 
 
@@ -69,16 +76,20 @@ public class PrivateMessageHandler
             // Log the error on the server
             Console.WriteLine(
                 $"[ERROR] Failed to process private message from '{command.SenderUsername}' " +
-                $"to '{command.RecipientUsername}': {ex}"
+                $"to '{command.RecipientUsername}': {ex.Message}"
             );
 
             // Notify the sender client about the failure
-            string senderTopic = TopicNames.CreatePrivateUserTopicName(command.SenderUsername);
-            var errorEvent = new ErrorEvent(
-                $"Failed to send private message to '{command.RecipientUsername}'. Please try again."
-            );
-
-            await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+            try
+            {
+                string senderTopic = TopicNames.CreatePrivateUserTopicName(command.SenderUsername);
+                var errorEvent = new ErrorEvent($"Failed to send private message to '{command.RecipientUsername}'. Please try again.");
+                await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+            }
+            catch (Exception innerEx)
+            {
+                Console.Error.WriteLine($"[ERROR] Failed to send ErrorEvent to '{command.SenderUsername}': {innerEx}");
+            }
         }
     }
 }

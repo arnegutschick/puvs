@@ -35,13 +35,20 @@ public class FileHandler
     /// Each received <see cref="SendFileCommand"/> is handled asynchronously.
     /// </summary>
     /// <returns>A <see cref="Task"/> representing the asynchronous subscription registration.</returns>
-    public Task StartAsync()
+    public async Task StartAsync()
     {
-        // Subscribe to file transfer events
-        return _bus.PubSub.SubscribeAsync<SendFileCommand>(
-            SubscriptionId,
-            HandleAsync
-        );
+        try
+        {
+            // Subscribe to file transfer events
+            await _bus.PubSub.SubscribeAsync<SendFileCommand>(
+                SubscriptionId,
+                HandleAsync
+            );
+        }
+        catch (Exception)
+        {
+            Console.WriteLine($"[ERROR] Failed to subscribe to client filesend events. Maybe RabbitMQ is down?");
+        }
     }
 
 
@@ -50,7 +57,6 @@ public class FileHandler
     /// to <see cref="FileService.HandleAsync"/>.
     /// </summary>
     /// <param name="command">The file command containing sender, file name, content, and size.</param>
-    /// <returns>A <see cref="Task"/> representing the asynchronous handling operation.</returns>
     private async Task HandleAsync(SendFileCommand command)
     {
         if (command == null)
@@ -64,21 +70,25 @@ public class FileHandler
             // Delegate file processing to the service
             await _service.HandleAsync(command);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             // Log the error on the server
             Console.WriteLine(
                 $"[ERROR] Failed to process file from '{command.SenderUsername}' " +
-                $"('{command.FileName}', {command.FileSizeBytes} bytes): {ex}"
+                $"('{command.FileName}', {command.FileSizeBytes} bytes)."
             );
 
             // Notify the sender client about the failure
-            string senderTopic = TopicNames.CreatePrivateUserTopicName(command.SenderUsername);
-            var errorEvent = new ErrorEvent(
-                $"Failed to send file '{command.FileName}': {ex.Message}"
-            );
-
-            await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+            try
+            {
+                string senderTopic = TopicNames.CreatePrivateUserTopicName(command.SenderUsername);
+                var errorEvent = new ErrorEvent($"Failed to send file '{command.FileName}'. Please try again.");
+                await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+            }
+            catch (Exception innerEx)
+            {
+                Console.Error.WriteLine($"[ERROR] Failed to send ErrorEvent to '{command.SenderUsername}': {innerEx}");
+            }
         }
     }
 }

@@ -35,13 +35,20 @@ public class MessageHandler
     /// Each received <see cref="SubmitMessageCommand"/> is handled asynchronously.
     /// </summary>
     /// <returns>A <see cref="Task"/> representing the asynchronous subscription registration.</returns>
-    public Task StartAsync()
+    public async Task StartAsync()
     {
-        // Subscribe to public message events
-        return _bus.PubSub.SubscribeAsync<SubmitMessageCommand>(
-            SubscriptionId,
-            HandleAsync
-        );
+        try
+        {
+            // Subscribe to public message events
+            await _bus.PubSub.SubscribeAsync<SubmitMessageCommand>(
+                SubscriptionId,
+                HandleAsync
+            );
+        }
+        catch (Exception)
+        {
+            Console.WriteLine($"[ERROR] Failed to subscribe to client messages. Maybe RabbitMQ is down?");
+        }
     }
 
 
@@ -68,16 +75,20 @@ public class MessageHandler
         {
             // Log the error on the server
             Console.WriteLine(
-                $"[ERROR] Failed to process public message from '{command.SenderUsername}': {ex}"
+                $"[ERROR] Failed to process public message from '{command.SenderUsername}': {ex.Message}"
             );
 
             // Notify the sender client about the failure
-            string senderTopic = TopicNames.CreatePrivateUserTopicName(command.SenderUsername);
-            var errorEvent = new ErrorEvent(
-                $"Failed to send your message: {ex.Message}"
-            );
-
-            await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+            try
+            {
+                string senderTopic = TopicNames.CreatePrivateUserTopicName(command.SenderUsername);
+                var errorEvent = new ErrorEvent($"Failed to send your message. Please try again.");
+                await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+            }
+            catch (Exception innerEx)
+            {
+                Console.Error.WriteLine($"[ERROR] Failed to send ErrorEvent to '{command.SenderUsername}': {innerEx}");
+            }
         }
     }
 }

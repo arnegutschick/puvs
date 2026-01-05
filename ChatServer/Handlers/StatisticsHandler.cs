@@ -31,11 +31,18 @@ public class StatisticsHandler
     /// Starts the RPC responder for <see cref="StatisticsRequest"/>.
     /// Clients calling this RPC will receive a <see cref="StatisticsResponse"/> with chat statistics.
     /// </summary>
-    /// <returns>A <see cref="Task"/> representing the asynchronous registration of the RPC handler.</returns>
-    public Task StartAsync()
+    /// <returns>A <see cref="Task"/> representing the asynchronous subscription registration.</returns>
+    public async Task StartAsync()
     {
-        // Register RPC handler for StatisticsRequest → StatisticsResponse
-        return _bus.Rpc.RespondAsync<StatisticsRequest, StatisticsResponse>(HandleAsync);
+        try
+        {
+            // Register RPC handler for StatisticsRequest → StatisticsResponse
+            await _bus.Rpc.RespondAsync<StatisticsRequest, StatisticsResponse>(HandleAsync);
+        }
+        catch (Exception)
+        {
+            Console.WriteLine($"[ERROR] Failed to start statistics RPC. Maybe RabbitMQ is down?");
+        }
     }
 
 
@@ -76,16 +83,20 @@ public class StatisticsHandler
         {
             // Log the error on the server
             Console.WriteLine(
-                $"[ERROR] Failed to process statistics request from '{request.RequestingUser}': {ex}"
+                $"[ERROR] Failed to process statistics request from '{request.RequestingUser}': {ex.Message}"
             );
 
             // Notify the requesting user about the failure via ErrorEvent
-            string senderTopic = TopicNames.CreatePrivateUserTopicName(request.RequestingUser);
-            var errorEvent = new ErrorEvent(
-                $"Failed to retrieve statistics. Please try again."
-            );
-
-            await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+            try
+            {
+                string senderTopic = TopicNames.CreatePrivateUserTopicName(request.RequestingUser);
+                var errorEvent = new ErrorEvent($"Failed to retrieve statistics. Please try again.");
+                await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+            }
+            catch (Exception innerEx)
+            {
+                Console.Error.WriteLine($"[ERROR] Failed to send ErrorEvent to '{request.RequestingUser}': {innerEx}");
+            }
 
             // Return empty/default statistics to avoid crashing the RPC call
             return new StatisticsResponse(false, 0, 0, new List<TopChatterDto>());

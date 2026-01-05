@@ -35,13 +35,20 @@ public class HeartbeatHandler
     /// Each received <see cref="ClientHeatbeat"/> event updates the user's heartbeat timestamp.
     /// </summary>
     /// <returns>A <see cref="Task"/> representing the asynchronous subscription registration.</returns>
-    public Task StartAsync()
+    public async Task StartAsync()
     {
-        // Subscribe to heartbeat events
-        return _bus.PubSub.SubscribeAsync<ClientHeatbeat>(
-            SubscriptionId,
-            HandleAsync
-        );
+        try
+        {
+            // Subscribe to heartbeat events
+            await _bus.PubSub.SubscribeAsync<ClientHeatbeat>(
+                SubscriptionId,
+                HandleAsync
+            );
+        }
+        catch (Exception)
+        {
+            Console.WriteLine($"[ERROR] Failed to subscribe to client heartbeat. Maybe RabbitMQ is down?");
+        }
     }
     
 
@@ -49,7 +56,6 @@ public class HeartbeatHandler
     /// Handles an incoming <see cref="ClientHeatbeat"/> event by updating the user's heartbeat.
     /// </summary>
     /// <param name="heartbeat">The heartbeat event containing the username.</param>
-    /// <returns>A completed <see cref="Task"/>.</returns>
     private Task HandleAsync(ClientHeatbeat heartbeat)
     {
         if (heartbeat == null)
@@ -67,18 +73,9 @@ public class HeartbeatHandler
         {
             // Log the error on the server
             Console.WriteLine(
-                $"[ERROR] Failed to process heartbeat for user '{heartbeat.Username}': {ex}"
+                $"[ERROR] Failed to process heartbeat for user '{heartbeat.Username}': {ex.Message}"
             );
-
-            // Notify the client about the failure
-            string senderTopic = TopicNames.CreatePrivateUserTopicName(heartbeat.Username);
-            var errorEvent = new ErrorEvent(
-                $"Failed to process your heartbeat: {ex.Message}"
-            );
-
-            return _bus.PubSub.PublishAsync(errorEvent, senderTopic);
         }
-
         return Task.CompletedTask;
     }
 }
