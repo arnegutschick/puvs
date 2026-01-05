@@ -193,7 +193,7 @@ public class ChatUI
                             else
                             {
                                 // Send private message to the specified user
-                                _logic.SendPrivateMessageAsync(parts[0], parts[1]);
+                                await _logic.SendPrivateMessageAsync(parts[0], parts[1]);
                             }
                             break;
                         }
@@ -253,7 +253,7 @@ public class ChatUI
             }
 
             // Send normal, public message to all users
-            _logic.SendMessageAsync(text);
+            await _logic.SendMessageAsync(text);
             e.Handled = true;
         }
         catch (Exception)

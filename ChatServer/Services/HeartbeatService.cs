@@ -61,9 +61,9 @@ public class HeartbeatService
             {
                 _bus.PubSub.Publish(new ServerHeartbeat(DateTime.UtcNow));
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine($"[ERROR] Failed to send ServerHeartbeat: {ex}");
+                Console.WriteLine($"[ERROR] Failed to send ServerHeartbeat.");
             }
         }, null, TimeSpan.Zero, TimeSpan.FromSeconds(intervalSeconds));
     }
@@ -110,9 +110,9 @@ public class HeartbeatService
                             );
                         }
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
-                        Console.WriteLine($"[ERROR] Failed to remove or notify user '{username}': {ex}");
+                        Console.WriteLine($"[ERROR] Failed to remove or notify user '{username}'.");
                     }
                 }
             }
@@ -122,7 +122,7 @@ public class HeartbeatService
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ERROR] Heartbeat cleanup task failed: {ex}");
+                Console.WriteLine($"[ERROR] Heartbeat cleanup task failed: {ex.Message}");
                 // Add small delay before retry
                 await Task.Delay(TimeSpan.FromSeconds(1), token);
             }

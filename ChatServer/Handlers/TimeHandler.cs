@@ -26,11 +26,18 @@ public class TimeHandler
     /// Starts the RPC responder for <see cref="TimeRequest"/>.
     /// Clients calling this RPC will receive a <see cref="TimeResponse"/> with the current server time.
     /// </summary>
-    /// <returns>A <see cref="Task"/> representing the asynchronous registration of the RPC handler.</returns>
-    public Task StartAsync()
+    /// <returns>A <see cref="Task"/> representing the asynchronous subscription registration.</returns>
+    public async Task StartAsync()
     {
-        // Register RPC handler for TimeRequest → TimeResponse
-        return _bus.Rpc.RespondAsync<TimeRequest, TimeResponse>(HandleAsync);
+        try
+        {
+            // Register RPC handler for TimeRequest → TimeResponse
+            await _bus.Rpc.RespondAsync<TimeRequest, TimeResponse>(HandleAsync);
+        }
+        catch (Exception)
+        {
+            Console.WriteLine($"[ERROR] Failed to start TimeHandler RPC. Maybe RabbitMQ is down?");
+        }
     }
 
 
@@ -59,17 +66,21 @@ public class TimeHandler
         catch (Exception ex)
         {
             // Log the error on the server
-            Console.WriteLine($"[ERROR] Failed to process time request: {ex}");
+            Console.WriteLine($"[ERROR] Failed to process time request: {ex.Message}");
 
             // Notify the requesting client via ErrorEvent
             if (!string.IsNullOrWhiteSpace(request.SenderUsername))
             {
-                string senderTopic = TopicNames.CreatePrivateUserTopicName(request.SenderUsername);
-                var errorEvent = new ErrorEvent(
-                    $"Failed to retrieve server time. Please try again."
-                );
-
-                await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+                try
+                {
+                    string senderTopic = TopicNames.CreatePrivateUserTopicName(request.SenderUsername);
+                    var errorEvent = new ErrorEvent($"Failed to retrieve server time. Please try again.");
+                    await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
+                }
+                catch (Exception innerEx)
+                {
+                    Console.Error.WriteLine($"[ERROR] Failed to send ErrorEvent to '{request.SenderUsername}': {innerEx}");
+                }
             }
 
             // Return a fallback response

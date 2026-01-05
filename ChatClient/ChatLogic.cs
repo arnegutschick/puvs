@@ -6,7 +6,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace ChatClient;
 
-
 /// <summary>
 /// Encapsulates the core logic for the chat client.
 /// Handles sending and receiving messages, file transfers, private messages,
@@ -31,8 +30,13 @@ public class ChatLogic
     private Timer? _heartbeatTimer;
     // Current user's username
     internal string Username { get; }
+    // Last registered heartbeat from the server 
     private DateTime _lastServerHeartbeat = DateTime.UtcNow;
-    private bool ServerOnline => (DateTime.UtcNow - _lastServerHeartbeat) < TimeSpan.FromSeconds(_configuration.GetValue("ChatSettings:HeartbeatTimeoutSeconds", 30));
+
+    // Calculates if the server is still online by comparing latest heartbeat with timeout value
+    private bool ServerOnline =>
+        (DateTime.UtcNow - _lastServerHeartbeat) <
+        TimeSpan.FromSeconds(_configuration.GetValue("ChatSettings:HeartbeatTimeoutSeconds", 30));
 
     // Constructor
     public ChatLogic(
@@ -40,8 +44,7 @@ public class ChatLogic
         string username,
         IConfiguration configuration,
         Action<string, string> appendMessageCallback,
-        Func<BroadcastFileEvent, Dialog> showFileDialogCallback
-        )
+        Func<BroadcastFileEvent, Dialog> showFileDialogCallback)
     {
         _bus = bus;
         Username = username;
@@ -49,7 +52,6 @@ public class ChatLogic
         _appendMessageCallback = appendMessageCallback;
         _showFileDialogCallback = showFileDialogCallback;
     }
-
 
     /// <summary>
     /// Subscribes to all relevant Pub/Sub events for the chat client.
@@ -75,19 +77,33 @@ public class ChatLogic
         // --- Broadcast chat messages ---
         _bus.PubSub.Subscribe<BroadcastMessageEvent>(subscriptionId, msg =>
         {
-            Application.MainLoop.Invoke(() =>
+            try
             {
-                _appendMessageCallback($"{msg.Username}: {msg.Text}", msg.UserColor);
-            });
+                Application.MainLoop.Invoke(() =>
+                {
+                    _appendMessageCallback($"{msg.Username}: {msg.Text}", msg.UserColor);
+                });
+            }
+            catch (Exception)
+            {
+                HandleBusError();
+            }
         });
 
         // --- User notifications ---
         _bus.PubSub.Subscribe<UserNotification>(subscriptionId, note =>
         {
-            Application.MainLoop.Invoke(() =>
+            try
             {
-                _appendMessageCallback($"[INFO] {note.Text}", "Black");
-            });
+                Application.MainLoop.Invoke(() =>
+                {
+                    _appendMessageCallback($"[INFO] {note.Text}", "Black");
+                });
+            }
+            catch (Exception)
+            {
+                HandleBusError();
+            }
         });
 
         // --- File messages ---
@@ -95,16 +111,23 @@ public class ChatLogic
         {
             if (file.Sender == Username) return;
 
-            Application.MainLoop.Invoke(() =>
+            try
             {
-                _appendMessageCallback(
-                    $"[FILE] {file.Sender}: {file.FileName} ({file.FileSizeBytes} bytes)",
-                    "BrightGreen"
-                );
+                Application.MainLoop.Invoke(() =>
+                {
+                    _appendMessageCallback(
+                        $"[FILE] {file.Sender}: {file.FileName} ({file.FileSizeBytes} bytes)",
+                        "BrightGreen"
+                    );
 
-                var dialog = _showFileDialogCallback(file);
-                Application.Run(dialog);
-            });
+                    var dialog = _showFileDialogCallback(file);
+                    Application.Run(dialog);
+                });
+            }
+            catch (Exception)
+            {
+                HandleBusError();
+            }
         });
 
         // --- Private messages (topic-based) ---
@@ -112,23 +135,30 @@ public class ChatLogic
             privateTopic,
             privateMessage =>
             {
-                Application.MainLoop.Invoke(() =>
+                try
                 {
-                    if (privateMessage.IsOutgoing)
+                    Application.MainLoop.Invoke(() =>
                     {
-                        _appendMessageCallback(
-                            $"[PRIVATE → {privateMessage.RecipientUsername}] {privateMessage.Text}",
-                            privateMessage.UserColor
-                        );
-                    }
-                    else
-                    {
-                        _appendMessageCallback(
-                            $"[PRIVATE ← {privateMessage.SenderUsername}] {privateMessage.Text}",
-                            privateMessage.UserColor
-                        );
-                    }
-                });
+                        if (privateMessage.IsOutgoing)
+                        {
+                            _appendMessageCallback(
+                                $"[PRIVATE → {privateMessage.RecipientUsername}] {privateMessage.Text}",
+                                privateMessage.UserColor
+                            );
+                        }
+                        else
+                        {
+                            _appendMessageCallback(
+                                $"[PRIVATE ← {privateMessage.SenderUsername}] {privateMessage.Text}",
+                                privateMessage.UserColor
+                            );
+                        }
+                    });
+                }
+                catch (Exception)
+                {
+                    HandleBusError();
+                }
             },
             cfg => cfg.WithTopic(privateTopic)
         );
@@ -140,10 +170,7 @@ public class ChatLogic
             {
                 Application.MainLoop.Invoke(() =>
                 {
-                    _appendMessageCallback(
-                        $"[ERROR] {error.Message}",
-                        "Red"
-                    );
+                    _appendMessageCallback($"[ERROR] {error.Message}", "Red");
                 });
             },
             cfg => cfg.WithTopic(privateTopic)
@@ -151,37 +178,37 @@ public class ChatLogic
 
         // --- Server Heartbeat ---
         _bus.PubSub.Subscribe<ServerHeartbeat>(
-        $"client_heartbeat_{Username}",
-        hb =>
-        {
-            _lastServerHeartbeat = hb.Timestamp;
-        });
+            $"client_heartbeat_{Username}",
+            hb =>
+            {
+                _lastServerHeartbeat = hb.Timestamp;
+            });
     }
-
 
     /// <summary>
     /// Sends a public message to all users via the Pub/Sub system.
     /// Ignores empty or whitespace-only messages.
     /// </summary>
     /// <param name="text">The message text to send.</param>
-    public async void SendMessageAsync(string text)
+    public async Task SendMessageAsync(string text)
     {
-        // Ensure text is not null
         text ??= "";
-
         var trimmed = text.Trim();
 
-        // Ignore empty messages
         if (string.IsNullOrWhiteSpace(trimmed))
             return;
 
-        // Check if the server is running before sending a command
         if (!EnsureServerOnline()) return;
 
-        // Publish the message to all users
-        _bus.PubSub.Publish(new SubmitMessageCommand(Username, text));
+        try
+        {
+            _bus.PubSub.Publish(new SubmitMessageCommand(Username, text));
+        }
+        catch (Exception)
+        {
+            HandleBusError();
+        }
     }
-
 
     /// <summary>
     /// Sends a private message to a specific user via the Pub/Sub system.
@@ -189,29 +216,27 @@ public class ChatLogic
     /// </summary>
     /// <param name="recipientUsername">The username of the message recipient.</param>
     /// <param name="text">The message content to send.</param>
-    public void SendPrivateMessageAsync(string recipientUsername, string text)
+    public async Task SendPrivateMessageAsync(string recipientUsername, string text)
     {
-        // Prevent sending a private message to oneself
         if (string.Equals(recipientUsername, Username, StringComparison.OrdinalIgnoreCase))
         {
-            _appendMessageCallback("[ERROR] You cannot send a private message to yourself.", "red");
+            _appendMessageCallback("[ERROR] You cannot send a private message to yourself.", "Red");
             return;
         }
 
-        // Check if the server is running before sending a command
         if (!EnsureServerOnline()) return;
 
-        // Create a command representing the private message
-        var command = new SendPrivateMessageCommand(
-            Username,
-            recipientUsername,
-            text
-        );
-
-        // Publish the command via the Pub/Sub system
-        _bus.PubSub.Publish(command);
+        try
+        {
+            _bus.PubSub.Publish(
+                new SendPrivateMessageCommand(Username, recipientUsername, text)
+            );
+        }
+        catch (Exception)
+        {
+            HandleBusError();
+        }
     }
-
 
     /// <summary>
     /// Handles the /time command: requests the current server time via RPC
@@ -220,20 +245,27 @@ public class ChatLogic
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task HandleTimeCommandAsync()
     {
-        // Check if the server is running before sending a command
         if (!EnsureServerOnline()) return;
 
-        // Request current server time via RPC
-        var res = await _bus.Rpc.RequestAsync<TimeRequest, TimeResponse>(
-            new TimeRequest(Username)
-        );
-        if (res.IsSuccess)
+        try
         {
-            // Display the server time in the chat
-            _appendMessageCallback($"[INFO] Current server time: {res.CurrentTime}", "Black");
+            var res = await _bus.Rpc.RequestAsync<TimeRequest, TimeResponse>(
+                new TimeRequest(Username)
+            );
+
+            if (res.IsSuccess)
+            {
+                _appendMessageCallback(
+                    $"[INFO] Current server time: {res.CurrentTime}",
+                    "Black"
+                );
+            }
+        }
+        catch (Exception)
+        {
+            HandleBusError();
         }
     }
-
 
     /// <summary>
     /// Handles the /users command: requests the list of currently logged in users via RPC
@@ -242,27 +274,31 @@ public class ChatLogic
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task HandleUsersCommandAsync()
     {
-        // Check if the server is running before sending a command
         if (!EnsureServerOnline()) return;
 
-        // Request current server time via RPC
-        var res = await _bus.Rpc.RequestAsync<UserListRequest, UserListResponse>(
-            new UserListRequest(Username)
-        );
-        if (res.IsSuccess)
+        try
         {
-            // Display a list of all currently logged in members
-            _appendMessageCallback($"=== Currently logged in users ===", "Black");
+            var res = await _bus.Rpc.RequestAsync<UserListRequest, UserListResponse>(
+                new UserListRequest(Username)
+            );
 
-            foreach (string user in res.UserList)
+            if (res.IsSuccess)
             {
-                _appendMessageCallback($"- {user}", "Black");
-            }
+                _appendMessageCallback($"=== Currently logged in users ===", "Black");
 
-            _appendMessageCallback("==================================", "Black");
+                foreach (string user in res.UserList)
+                {
+                    _appendMessageCallback($"- {user}", "Black");
+                }
+
+                _appendMessageCallback($"==================================", "Black");
+            }
+        }
+        catch (Exception)
+        {
+            HandleBusError();
         }
     }
-
 
     /// <summary>
     /// Handles the /stats command: requests chat statistics from the server
@@ -271,42 +307,43 @@ public class ChatLogic
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task HandleStatisticsCommandAsync()
     {
-        // Check if the server is running before sending a command
         if (!EnsureServerOnline()) return;
 
-        // Request statistics from the server via RPC
-        var res = await _bus.Rpc.RequestAsync<
-            StatisticsRequest,
-            StatisticsResponse>(
+        try
+        {
+            var res = await _bus.Rpc.RequestAsync<StatisticsRequest, StatisticsResponse>(
                 new StatisticsRequest(Username)
             );
 
-        if (res.IsSuccess)
-        {
-            // Display statistics
-            _appendMessageCallback("=== Statistics ===", "Black");
-            _appendMessageCallback($"Total Messages: {res.TotalMessages}", "Black");
-            _appendMessageCallback($"Ø Messages per User: {res.AvgMessagesPerUser:F2}", "Black");
-            _appendMessageCallback("Top 3 most active Chatters:", "Black");
+            if (res.IsSuccess)
+            {
+                _appendMessageCallback("=== Statistics ===", "Black");
+                _appendMessageCallback($"Total Messages: {res.TotalMessages}", "Black");
+                _appendMessageCallback($"Ø Messages per User: {res.AvgMessagesPerUser:F2}", "Black");
+                _appendMessageCallback("Top 3 most active Chatters:", "Black");
 
-            if (res.Top3 == null || res.Top3.Count == 0)
-            {
-                _appendMessageCallback("  (currently no data)", "Black");
-            }
-            else
-            {
-                int rank = 1;
-                foreach (var t in res.Top3)
+                if (res.Top3 == null || res.Top3.Count == 0)
                 {
-                    _appendMessageCallback($"  {rank}. {t.User}: {t.MessageCount}", "Black");
-                    rank++;
+                    _appendMessageCallback("  (currently no data)", "Black");
                 }
-            }
+                else
+                {
+                    int rank = 1;
+                    foreach (var t in res.Top3)
+                    {
+                        _appendMessageCallback($"  {rank}. {t.User}: {t.MessageCount}", "Black");
+                        rank++;
+                    }
+                }
 
-            _appendMessageCallback("=================", "Black");
+                _appendMessageCallback("=================", "Black");
+            }
+        }
+        catch (Exception)
+        {
+            HandleBusError();
         }
     }
-
 
     /// <summary>
     /// Handles sending a file to other users via the chat's Pub/Sub system.
@@ -318,44 +355,40 @@ public class ChatLogic
     {
         if (string.IsNullOrWhiteSpace(path))
         {
-            Console.WriteLine("[ERROR] Invalid file path.");
+            _appendMessageCallback("[ERROR] Invalid file path.", "Red");
             return;
         }
 
-        // Check if the file exists
         if (!File.Exists(path))
         {
-            _appendMessageCallback("[ERROR] File does not exist.", "red");
+            _appendMessageCallback("[ERROR] File does not exist.", "Red");
             return;
         }
 
         var info = new FileInfo(path);
 
-        // Check if the file exceeds 1 MB
         if (info.Length > 1_000_000)
         {
-            _appendMessageCallback("[ERROR] File is too large (max 1 MB).", "red");
+            _appendMessageCallback("[ERROR] File is too large (max 1 MB).", "Red");
             return;
         }
 
-        // Check if the server is running before sending a command
         if (!EnsureServerOnline()) return;
 
-        // Read file bytes asynchronously
-        byte[] bytes = await File.ReadAllBytesAsync(path);
+        try
+        {
+            byte[] bytes = await File.ReadAllBytesAsync(path);
+            string base64 = Convert.ToBase64String(bytes);
 
-        // Convert file content to Base64 string for transmission
-        string base64 = Convert.ToBase64String(bytes);
+            _bus.PubSub.Publish(new SendFileCommand(Username, info.Name, base64, info.Length));
 
-        // Publish the file to other users via the Pub/Sub system
-        _bus.PubSub.Publish(
-            new SendFileCommand(Username, info.Name, base64, info.Length)
-        );
-
-        // Notify the user that the file has been sent
-        _appendMessageCallback($"[YOU] Sent file {info.Name}", "BrightGreen");
+            _appendMessageCallback($"[YOU] Sent file {info.Name}", "BrightGreen");
+        }
+        catch (Exception)
+        {
+            HandleBusError();
+        }
     }
-
 
     /// <summary>
     /// Saves a received file from a <see cref="BroadcastFileEvent"/> to the user's Downloads/Chat folder.
@@ -365,29 +398,29 @@ public class ChatLogic
     /// <returns>A task representing the asynchronous save operation.</returns>
     public async Task SaveFileAsync(BroadcastFileEvent file)
     {
-        // Decode the Base64 content into a byte array
-        byte[] data = Convert.FromBase64String(file.ContentBase64);
+        try
+        {
+            byte[] data = Convert.FromBase64String(file.ContentBase64);
 
-        // Determine the save directory: ~/Downloads/Chat
-        string dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            "Downloads",
-            "Chat"
-        );
+            string dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                "Downloads",
+                "Chat"
+            );
 
-        // Ensure the directory exists
-        Directory.CreateDirectory(dir);
+            Directory.CreateDirectory(dir);
 
-        // Full path to save the file
-        string path = Path.Combine(dir, file.FileName);
+            string path = Path.Combine(dir, file.FileName);
 
-        // Write the file asynchronously
-        await File.WriteAllBytesAsync(path, data);
+            await File.WriteAllBytesAsync(path, data);
 
-        // Notify the user in the chat that the file has been saved
-        _appendMessageCallback($"[SAVED] {path}", "BrightGreen");
+            _appendMessageCallback($"[SAVED] {path}", "BrightGreen");
+        }
+        catch (Exception)
+        {
+            HandleBusError();
+        }
     }
-
 
     /// <summary>
     /// Starts sending periodic heartbeat messages to the server to indicate that this client is still online.
@@ -395,16 +428,20 @@ public class ChatLogic
     /// </summary>
     public void StartClientHeartbeat()
     {
-        // Retrieve heartbeat interval from config file
-        int intervalSeconds = _configuration.GetValue("ChatSettings:ClientHeartbeatIntervalSeconds", 10);
+        int intervalSeconds =
+            _configuration.GetValue("ChatSettings:ClientHeartbeatIntervalSeconds", 10);
 
-        // Start a new timer that sends a heartbeat to the server 
         _heartbeatTimer = new Timer(_ =>
         {
-            _bus.PubSub.Publish(new ClientHeatbeat(Username));
+            try
+            {
+                _bus.PubSub.Publish(new ClientHeatbeat(Username));
+            }
+            catch (Exception)
+            {
+            }
         }, null, TimeSpan.Zero, TimeSpan.FromSeconds(intervalSeconds));
     }
-
 
     /// <summary>
     /// Stops sending heartbeat messages by disposing the underlying timer.
@@ -414,7 +451,6 @@ public class ChatLogic
     {
         _heartbeatTimer?.Dispose();
     }
-
 
     /// <summary>
     /// Checks whether the server is considered online based on the last received heartbeat.
@@ -431,9 +467,26 @@ public class ChatLogic
     {
         if (!ServerOnline)
         {
-            _appendMessageCallback("[ERROR] Server offline - request blocked.", "Red");
+            _appendMessageCallback("[ERROR] Either the server or RabbitMQ are offline.", "Red");
             return false;
         }
         return true;
+    }
+
+    /// <summary>
+    /// Centralized error handling for messaging- and UI-related failures.
+    /// Prevents client crashes caused by RabbitMQ disconnects or UI exceptions.
+    /// </summary>
+    private void HandleBusError()
+    {
+        _lastServerHeartbeat = DateTime.MinValue;
+
+        Application.MainLoop.Invoke(() =>
+        {
+            _appendMessageCallback(
+                $"[ERROR] Connection problem. Maybe RabbitMQ is down?",
+                "Red"
+            );
+        });
     }
 }

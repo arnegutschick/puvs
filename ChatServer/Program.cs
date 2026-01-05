@@ -1,4 +1,5 @@
 using EasyNetQ;
+using EasyNetQ.Topology;
 using Chat.Contracts.Infrastructure;
 using ChatServer.Services;
 using ChatServer.Handlers;
@@ -28,14 +29,29 @@ internal class Program
             // --- RabbitMQ Bus Connection ---
             string rabbitHost = configuration.GetValue<string>("RabbitMQ:Host") ?? "localhost";
             using IBus bus = RabbitMqBusFactory.Create($"host={rabbitHost}");
-            Console.WriteLine($"Connected to RabbitMQ at {rabbitHost}.");
+
+            // RabbitMQ ping simulation: try to create a connection
+            try
+            {
+                var advancedBus = bus.Advanced;
+                var testExchange = await advancedBus.ExchangeDeclareAsync("ping_check", ExchangeType.Fanout);
+                await advancedBus.ExchangeDeleteAsync(testExchange);
+
+                // If no exception occurs the connection seems stable
+                Console.WriteLine($"Connected to RabbitMQ at {rabbitHost}.");
+            }
+            catch (Exception)
+            {
+                Console.WriteLine($"[ERROR] Cannot reach RabbitMQ at {rabbitHost}.");
+                Environment.Exit(1);
+            }
 
             // Load color pool for chat messages from config
             string[] colorPool = configuration.GetSection("ChatSettings:ChatMessageColorPool").Get<string[]>() ?? Array.Empty<string>();
             if (colorPool.Length == 0)
             {
                 Console.WriteLine("Warning: No colors configured. Using default colors.");
-                colorPool = [ "Blue", "Green", "Magenta", "Cyan" ];
+                colorPool = ["Blue", "Green", "Magenta", "Cyan"];
             }
 
             // Dictionary to track connected users
@@ -84,10 +100,12 @@ internal class Program
 
             // Stop Server Heartbeat
             heartbeatService.StopServerHeartbeat();
+
+            bus.Dispose();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Console.WriteLine($"[FATAL] Server failed: {ex}");
+            Console.WriteLine($"[FATAL] Server failed.");
         }
     }
 }
