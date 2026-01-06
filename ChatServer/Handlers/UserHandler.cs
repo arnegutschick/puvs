@@ -106,6 +106,7 @@ public class UserHandler : CommandExecutionWrapper
                     async () => 
                     {
                         _service.RemoveUser(request.Username);
+                        Console.WriteLine($"User {request.Username} has left the chat.");
                         await Bus.PubSub.PublishAsync(new UserNotification($"User {request.Username} has left the chat."));
                         return;
                     },
