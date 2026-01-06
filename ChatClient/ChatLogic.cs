@@ -34,7 +34,7 @@ public class ChatLogic
     private DateTime _lastServerHeartbeat = DateTime.UtcNow;
 
     // Calculates if the server is still online by comparing latest heartbeat with timeout value
-    private bool ServerOnline =>
+    private bool ServerReachable =>
         (DateTime.UtcNow - _lastServerHeartbeat) <
         TimeSpan.FromSeconds(_configuration.GetValue("ChatSettings:HeartbeatTimeoutSeconds", 30));
 
@@ -198,7 +198,7 @@ public class ChatLogic
         if (string.IsNullOrWhiteSpace(trimmed))
             return;
 
-        if (!EnsureServerOnline()) return;
+        if (!EnsureServerReachable()) return;
 
         try
         {
@@ -224,7 +224,7 @@ public class ChatLogic
             return;
         }
 
-        if (!EnsureServerOnline()) return;
+        if (!EnsureServerReachable()) return;
 
         try
         {
@@ -245,7 +245,7 @@ public class ChatLogic
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task HandleTimeCommandAsync()
     {
-        if (!EnsureServerOnline()) return;
+        if (!EnsureServerReachable()) return;
 
         try
         {
@@ -274,7 +274,7 @@ public class ChatLogic
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task HandleUsersCommandAsync()
     {
-        if (!EnsureServerOnline()) return;
+        if (!EnsureServerReachable()) return;
 
         try
         {
@@ -307,7 +307,7 @@ public class ChatLogic
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task HandleStatisticsCommandAsync()
     {
-        if (!EnsureServerOnline()) return;
+        if (!EnsureServerReachable()) return;
 
         try
         {
@@ -373,7 +373,7 @@ public class ChatLogic
             return;
         }
 
-        if (!EnsureServerOnline()) return;
+        if (!EnsureServerReachable()) return;
 
         try
         {
@@ -437,9 +437,7 @@ public class ChatLogic
             {
                 _bus.PubSub.Publish(new ClientHeatbeat(Username));
             }
-            catch (Exception)
-            {
-            }
+            catch (Exception) {}
         }, null, TimeSpan.Zero, TimeSpan.FromSeconds(intervalSeconds));
     }
 
@@ -460,12 +458,12 @@ public class ChatLogic
     /// <c>false</c> if the server is offline, in which case a message is appended to the UI.
     /// </returns>
     /// <remarks>
-    /// This method uses the <see cref="ServerOnline"/> property to determine the server status.
+    /// This method uses the <see cref="ServerReachable"/> property to determine the server status.
     /// If the server is offline, it notifies the user via the UI callback and blocks further requests.
     /// </remarks>
-    private bool EnsureServerOnline()
+    private bool EnsureServerReachable()
     {
-        if (!ServerOnline)
+        if (!ServerReachable)
         {
             _appendMessageCallback("[ERROR] Either the server or RabbitMQ are offline.", "Red");
             return false;

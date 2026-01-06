@@ -10,9 +10,8 @@ namespace ChatServer.Handlers;
 /// Subscribes to <see cref="SubmitMessageCommand"/> events and delegates
 /// handling to <see cref="MessageService"/> for broadcasting to all clients.
 /// </summary>
-public class MessageHandler
+public class MessageHandler : BaseHandler
 {
-    private readonly IBus _bus;
     private readonly MessageService _service;
 
     // Subscription ID for public messages
@@ -24,8 +23,8 @@ public class MessageHandler
     /// <param name="bus">The EasyNetQ message bus for Pub/Sub communication.</param>
     /// <param name="service">The service responsible for handling and broadcasting messages.</param>
     public MessageHandler(IBus bus, MessageService service)
+        : base(bus)
     {
-        _bus = bus;
         _service = service;
     }
 
@@ -40,7 +39,7 @@ public class MessageHandler
         try
         {
             // Subscribe to public message events
-            await _bus.PubSub.SubscribeAsync<SubmitMessageCommand>(
+            await Bus.PubSub.SubscribeAsync<SubmitMessageCommand>(
                 SubscriptionId,
                 HandleAsync
             );
@@ -48,6 +47,7 @@ public class MessageHandler
         catch (Exception)
         {
             Console.WriteLine($"[ERROR] Failed to subscribe to client messages. Maybe RabbitMQ is down?");
+            throw;
         }
     }
 
@@ -58,37 +58,18 @@ public class MessageHandler
     /// </summary>
     /// <param name="command">The public message command containing sender and text.</param>
     /// <returns>A <see cref="Task"/> representing the asynchronous handling operation.</returns>
-    private async Task HandleAsync(SubmitMessageCommand command)
+    private Task HandleAsync(SubmitMessageCommand command)
     {
         if (command == null)
         {
             Console.WriteLine("[WARNING] Received null SubmitMessageCommand");
-            return;
+            return Task.CompletedTask;
         }
 
-        try
-        {
-            // Delegate message processing to the service
-            await _service.HandleAsync(command);
-        }
-        catch (Exception ex)
-        {
-            // Log the error on the server
-            Console.WriteLine(
-                $"[ERROR] Failed to process public message from '{command.SenderUsername}': {ex.Message}"
-            );
-
-            // Notify the sender client about the failure
-            try
-            {
-                string senderTopic = TopicNames.CreatePrivateUserTopicName(command.SenderUsername);
-                var errorEvent = new ErrorEvent($"Failed to send your message. Please try again.");
-                await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
-            }
-            catch (Exception innerEx)
-            {
-                Console.Error.WriteLine($"[ERROR] Failed to send ErrorEvent to '{command.SenderUsername}': {innerEx}");
-            }
-        }
+        return ExecuteCommandAsync(
+            command.SenderUsername,
+            () => _service.HandleAsync(command),
+            "Failed to send your message. Please try again."
+        );
     }
 }

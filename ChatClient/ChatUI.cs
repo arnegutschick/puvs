@@ -153,7 +153,7 @@ public class ChatUI
                         break;
 
                     case "/sendfile":
-                    // Handle /sendfile command
+                        // Handle /sendfile command
                         try
                         {
                             // Check if the message contains a filepath
@@ -174,7 +174,7 @@ public class ChatUI
                         break;
 
                     case "/msg":
-                        // Private message command: /msg <username> <message>
+                        // Handle /msg command
                         try
                         {
                             if (text.Length <= 5)
@@ -258,7 +258,6 @@ public class ChatUI
         }
         catch (Exception)
         {
-            // Log and show error in chat window
             AppendMessage($"[ERROR] An exception occured while processing input.", "red");
         }
     }
@@ -373,13 +372,6 @@ public class ChatUI
         int terminalWidth = Application.Driver.Cols;
         int dialogWidth = Math.Min(terminalWidth - 5, 65); // leave some margin
         int dialogHeight = 7;
-
-        // --- Create base color schemes ---
-        var normalAttr = Application.Driver.MakeAttribute(Color.Black, Color.White);
-        var focusedAttr = Application.Driver.MakeAttribute(Color.White, Color.Black);
-
-        var normalCS = new ColorScheme { Normal = normalAttr };
-        var focusedCS = new ColorScheme { Normal = focusedAttr };
 
         var dialog = new Dialog("File received", dialogWidth, dialogHeight);
 

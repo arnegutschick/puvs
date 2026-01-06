@@ -10,9 +10,8 @@ namespace ChatServer.Handlers;
 /// Subscribes to <see cref="SendPrivateMessageCommand"/> events and delegates
 /// handling to <see cref="PrivateMessageService"/>.
 /// </summary>
-public class PrivateMessageHandler
+public class PrivateMessageHandler : BaseHandler
 {
-    private readonly IBus _bus;
     private readonly PrivateMessageService _service;
 
     // Subscription ID for private messages
@@ -24,8 +23,8 @@ public class PrivateMessageHandler
     /// <param name="bus">The EasyNetQ message bus for Pub/Sub communication.</param>
     /// <param name="service">The service responsible for processing private messages.</param>
     public PrivateMessageHandler(IBus bus, PrivateMessageService service)
+        : base(bus)
     {
-        _bus = bus;
         _service = service;
     }
 
@@ -40,7 +39,7 @@ public class PrivateMessageHandler
         try
         {
             // Subscribe to private message events
-            await _bus.PubSub.SubscribeAsync<SendPrivateMessageCommand>(
+            await Bus.PubSub.SubscribeAsync<SendPrivateMessageCommand>(
                 SubscriptionId,
                 HandleAsync
             );
@@ -48,6 +47,7 @@ public class PrivateMessageHandler
         catch (Exception)
         {
             Console.WriteLine($"[ERROR] Failed to start private message RPC. Maybe RabbitMQ is down?");
+            throw;
         }
     }
 
@@ -58,38 +58,18 @@ public class PrivateMessageHandler
     /// </summary>
     /// <param name="command">The private message command containing sender, recipient, and text.</param>
     /// <returns>A <see cref="Task"/> representing the asynchronous handling operation.</returns>
-    private async Task HandleAsync(SendPrivateMessageCommand command)
+    private Task HandleAsync(SendPrivateMessageCommand command)
     {
         if (command == null)
         {
             Console.WriteLine("[WARNING] Received null SendPrivateMessageCommand");
-            return;
+            return Task.CompletedTask;
         }
-        
-        try
-        {
-            // Delegate message processing to the service
-            await _service.HandleAsync(command);
-        }
-        catch (Exception ex)
-        {
-            // Log the error on the server
-            Console.WriteLine(
-                $"[ERROR] Failed to process private message from '{command.SenderUsername}' " +
-                $"to '{command.RecipientUsername}': {ex.Message}"
-            );
 
-            // Notify the sender client about the failure
-            try
-            {
-                string senderTopic = TopicNames.CreatePrivateUserTopicName(command.SenderUsername);
-                var errorEvent = new ErrorEvent($"Failed to send private message to '{command.RecipientUsername}'. Please try again.");
-                await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
-            }
-            catch (Exception innerEx)
-            {
-                Console.Error.WriteLine($"[ERROR] Failed to send ErrorEvent to '{command.SenderUsername}': {innerEx}");
-            }
-        }
+        return ExecuteCommandAsync(
+            username: command.SenderUsername,
+            handlerAction: () => _service.HandleAsync(command),
+            errorMessage: $"Failed to send private message to '{command.RecipientUsername}'. Please try again."
+        );
     }
 }
