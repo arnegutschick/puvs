@@ -63,7 +63,7 @@ public class HeartbeatService
             }
             catch (Exception)
             {
-                Console.WriteLine($"[ERROR] Failed to send ServerHeartbeat.");
+                Console.WriteLine($"[ERROR] Failed to send ServerHeartbeat. Is RabbitMQ running?");
             }
         }, null, TimeSpan.Zero, TimeSpan.FromSeconds(intervalSeconds));
     }
@@ -99,7 +99,7 @@ public class HeartbeatService
                 {
                     try
                     {
-                        if (_users.Remove(username))
+                        if (_users.RemoveUser(username))
                         {
                             Console.WriteLine($"User '{username}' has timed out.");
 
@@ -112,7 +112,7 @@ public class HeartbeatService
                     }
                     catch (Exception)
                     {
-                        Console.WriteLine($"[ERROR] Failed to remove or notify user '{username}'.");
+                        Console.WriteLine($"[ERROR] Failed or notify user '{username}'.");
                     }
                 }
             }

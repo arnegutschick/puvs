@@ -45,9 +45,9 @@ internal class Program
             // Core services
             var userService = new UserService(connectedUsers, colorPool);
             var statisticsService = new StatisticsService();
-            var messageService = new MessageService(bus, connectedUsers, statisticsService);
-            var privateMessageService = new PrivateMessageService(bus, connectedUsers);
-            var fileService = new FileService(bus);
+            var messageService = new MessageService(connectedUsers, statisticsService);
+            var privateMessageService = new PrivateMessageService(connectedUsers);
+            var fileService = new FileService();
             var heartbeatService = new HeartbeatService(userService, bus, configuration);
 
             // Handlers subscribe to Pub/Sub events and process incoming messages/commands

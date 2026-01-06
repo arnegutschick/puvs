@@ -1,5 +1,4 @@
 using Chat.Contracts;
-using EasyNetQ;
 
 namespace ChatServer.Services;
 
@@ -9,32 +8,25 @@ namespace ChatServer.Services;
 /// </summary>
 public class FileService
 {
-    private readonly IBus _bus;
-
     /// <summary>
-    /// Initializes the FileService with the message bus.
-    /// </summary>
-    /// <param name="bus">The EasyNetQ message bus for publishing file events.</param>
-    public FileService(IBus bus)
-    {
-        _bus = bus;
-    }
-
-
-    /// <summary>
-    /// Handles an incoming file transfer command.
+    /// Processes an incoming file sent by a client.
+    /// - Validates the command and file size (throws if the file is too large)
     /// - Logs the received file
-    /// - Creates a <see cref="BroadcastFileEvent"/>
-    /// - Publishes the file event to all subscribers
+    /// - Creates a <see cref="BroadcastFileEvent"/> to be sent to all clients
     /// </summary>
-    /// <param name="command">The <see cref="SendFileCommand"/> containing sender, file name, content, and size.</param>
-    public async Task HandleAsync(SendFileCommand command)
+    /// <param name="command">The <see cref="SendFileCommand"/> containing the sender, file name, file content, and file size.</param>
+    /// <returns>
+    /// A <see cref="BroadcastFileEvent"/> containing the sender, file name, base64-encoded content, and file size for broadcasting.
+    /// </returns>
+    public BroadcastFileEvent ProcessFile(SendFileCommand command)
     {
         if (command == null)
         {
-            Console.WriteLine("[WARNING] Received null SendFileCommand");
-            return;
+            throw new ArgumentException("Received null SendFileCommand");
         }
+
+        if (command.FileSizeBytes > 1_000_000)
+            throw new InvalidOperationException("File too large");
 
         Console.WriteLine(
             $"File received from '{command.SenderUsername}': {command.FileName} ({command.FileSizeBytes} bytes)"
@@ -48,7 +40,6 @@ public class FileService
             command.FileSizeBytes
         );
 
-        // Publish the file event to the message bus
-        await _bus.PubSub.PublishAsync(fileEvent);
+        return fileEvent;
     }
 }

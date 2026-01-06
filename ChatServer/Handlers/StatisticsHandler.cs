@@ -10,7 +10,7 @@ namespace ChatServer.Handlers;
 /// Responds with a snapshot of chat statistics including total messages,
 /// average messages per user, and top 3 most active users.
 /// </summary>
-public class StatisticsHandler : BaseHandler
+public class StatisticsHandler : CommandExecutionWrapper
 {
     private readonly StatisticsService _service;
 
@@ -47,11 +47,16 @@ public class StatisticsHandler : BaseHandler
 
 
     /// <summary>
-    /// Handles an incoming <see cref="StatisticsRequest"/> and returns a snapshot of chat statistics.
+    /// Handles an incoming <see cref="StatisticsRequest"/> asynchronously.
+    /// - Logs a warning and returns a default <see cref="StatisticsResponse"/> if the request is null
+    /// - Retrieves message statistics including total messages, average messages per user, and top 3 chatters
+    /// - Uses <see cref="ExecuteRpcAsync"/> to handle execution context, errors, and provide a default response
     /// </summary>
-    /// <param name="request">The statistics request containing the requesting user's username.</param>
-    /// <returns>A <see cref="Task{StatisticsResponse}"/> containing the total messages,
-    /// average messages per user, and the top 3 most active users.</returns>
+    /// <param name="request">The <see cref="StatisticsRequest"/> containing the requesting user's information.</param>
+    /// <returns>
+    /// A <see cref="Task{StatisticsResponse}"/> representing the asynchronous operation.
+    /// The response contains success status, total messages, average messages per user, and a list of top chatters.
+    /// </returns>
     private Task<StatisticsResponse> HandleAsync(StatisticsRequest request)
     {
         if (request == null)
@@ -68,8 +73,10 @@ public class StatisticsHandler : BaseHandler
             {
                 Console.WriteLine($"Received statistics request from {request.RequestingUser}.");
 
+                // Call service to generate chat statistics
                 var (total, avg, top3) = _service.Snapshot();
 
+                // Create response
                 var response = new StatisticsResponse(
                     IsSuccess: true,
                     TotalMessages: total,

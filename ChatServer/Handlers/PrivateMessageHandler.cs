@@ -10,7 +10,7 @@ namespace ChatServer.Handlers;
 /// Subscribes to <see cref="SendPrivateMessageCommand"/> events and delegates
 /// handling to <see cref="PrivateMessageService"/>.
 /// </summary>
-public class PrivateMessageHandler : BaseHandler
+public class PrivateMessageHandler : CommandExecutionWrapper
 {
     private readonly PrivateMessageService _service;
 
@@ -53,11 +53,13 @@ public class PrivateMessageHandler : BaseHandler
 
 
     /// <summary>
-    /// Handles an incoming <see cref="SendPrivateMessageCommand"/> by delegating it
-    /// to <see cref="PrivateMessageService.HandleAsync"/>.
+    /// Handles an incoming <see cref="SendPrivateMessageCommand"/> asynchronously.
+    /// - Processes the private message and generates events for both sender and recipient
+    /// - Publishes the events to the corresponding private topics via the message bus
+    /// - Uses <see cref="ExecuteCommandAsync"/> to handle execution context and errors
     /// </summary>
-    /// <param name="command">The private message command containing sender, recipient, and text.</param>
-    /// <returns>A <see cref="Task"/> representing the asynchronous handling operation.</returns>
+    /// <param name="command">The <see cref="SendPrivateMessageCommand"/> containing the sender, recipient, and message text.</param>
+    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     private Task HandleAsync(SendPrivateMessageCommand command)
     {
         if (command == null)
@@ -67,9 +69,19 @@ public class PrivateMessageHandler : BaseHandler
         }
 
         return ExecuteCommandAsync(
-            username: command.SenderUsername,
-            handlerAction: () => _service.HandleAsync(command),
-            errorMessage: $"Failed to send private message to '{command.RecipientUsername}'. Please try again."
-        );
+            command.SenderUsername,
+            async () =>
+            {
+                // Delegate command processing to service
+                var events = _service.ProcessPrivateMessage(command);
+
+                // Get topic names for routing
+                string senderTopic = TopicNames.CreatePrivateUserTopicName(command.SenderUsername);
+                string recipientTopic = TopicNames.CreatePrivateUserTopicName(command.RecipientUsername);
+
+                await Bus.PubSub.PublishAsync(events.recipientEvent, recipientTopic);
+                await Bus.PubSub.PublishAsync(events.senderEvent, senderTopic);
+            },
+            errorMessage: $"Failed to send private message to '{command.RecipientUsername}'.");
     }
 }

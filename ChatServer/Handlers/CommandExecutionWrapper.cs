@@ -8,11 +8,11 @@ namespace ChatServer.Handlers;
 /// Base class for all handlers (commands and RPC) providing
 /// standardized error handling and client notification.
 /// </summary>
-public abstract class BaseHandler
+public abstract class CommandExecutionWrapper
 {
     protected readonly IBus Bus;
 
-    protected BaseHandler(IBus bus)
+    protected CommandExecutionWrapper(IBus bus)
     {
         Bus = bus;
     }

@@ -31,21 +31,19 @@ internal static class Program
             Console.Write("Enter username: ");
             string username = Console.ReadLine() ?? Guid.NewGuid().ToString();
 
-            // Perform login via RPC call
-            try
+            // Use LoginService to perform RPC login
+            var loginService = new Services.LoginService(bus);
+
+            var loginResponse = await loginService.LoginAsync(username);
+            if (loginResponse is null)
             {
-                var loginResponse = bus.Rpc.Request<Chat.Contracts.LoginRequest, Chat.Contracts.LoginResponse>(
-                    new Chat.Contracts.LoginRequest(username)
-                );
-                if (!loginResponse.IsSuccess)
-                {
-                    Console.WriteLine($"Login failed: {loginResponse.Reason}");
-                    return;
-                }
+                // Communication failure already reported by the service
+                return;
             }
-            catch (Exception)
+
+            if (!loginResponse.IsSuccess)
             {
-                Console.WriteLine("[FATAL] Login request failed. Maybe RabbitMQ is down?");
+                Console.WriteLine($"Login failed: {loginResponse.Reason}");
                 return;
             }
 
@@ -70,16 +68,9 @@ internal static class Program
             ui.Run(); // Blocks until application exits
 
             // --- Cleanup on Exit ---
-            // Publish logout event to notify server
-            try
-            {
-                bus.PubSub.Publish(new Chat.Contracts.LogoutRequest(username));
-            }
-            catch (Exception)
-            {
-                Console.WriteLine("[FATAL] Logout request failed. Is RabbitMQ down?");
-                return;
-            }
+            // Publish logout event to notify server via LoginService - using fire-and-forget to prevent UI freeze
+            _ = loginService.LogoutAsync(username);
+
             // Dispose the bus to free resources
             bus.Dispose();
         }

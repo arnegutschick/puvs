@@ -10,7 +10,7 @@ namespace ChatServer.Handlers;
 /// Subscribes to <see cref="SubmitMessageCommand"/> events and delegates
 /// handling to <see cref="MessageService"/> for broadcasting to all clients.
 /// </summary>
-public class MessageHandler : BaseHandler
+public class MessageHandler : CommandExecutionWrapper
 {
     private readonly MessageService _service;
 
@@ -53,11 +53,12 @@ public class MessageHandler : BaseHandler
 
 
     /// <summary>
-    /// Handles an incoming <see cref="SubmitMessageCommand"/> by delegating it
-    /// to <see cref="MessageService.HandleAsync"/>.
+    /// Handles an incoming <see cref="SubmitMessageCommand"/> asynchronously.
+    /// - Processes the message and publishes a <see cref="BroadcastMessageEvent"/> via the message bus
+    /// - Uses <see cref="ExecuteCommandAsync"/> to handle execution and errors
     /// </summary>
-    /// <param name="command">The public message command containing sender and text.</param>
-    /// <returns>A <see cref="Task"/> representing the asynchronous handling operation.</returns>
+    /// <param name="command">The <see cref="SubmitMessageCommand"/> containing the sender and message text.</param>
+    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     private Task HandleAsync(SubmitMessageCommand command)
     {
         if (command == null)
@@ -68,7 +69,12 @@ public class MessageHandler : BaseHandler
 
         return ExecuteCommandAsync(
             command.SenderUsername,
-            () => _service.HandleAsync(command),
+            handlerAction: async () =>
+            {
+                // Delegate command processing to service
+                BroadcastMessageEvent messageEvent = _service.ProcessMessage(command);
+                await Bus.PubSub.PublishAsync(messageEvent);
+            },
             "Failed to send your message. Please try again."
         );
     }
