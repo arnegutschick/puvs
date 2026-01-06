@@ -62,5 +62,8 @@ Start-Process powershell -WorkingDirectory $basePath -ArgumentList "-NoExit", "-
 # Starte Client 2 in einem neuen Fenster
 Start-Process powershell -WorkingDirectory $basePath -ArgumentList "-NoExit", "-Command", "Write-Host '--- Chat Client 2 ---' -ForegroundColor Cyan; dotnet run --project ChatClient"
 
+# Starte Client 3 in einem neuen Fenster
+Start-Process powershell -WorkingDirectory $basePath -ArgumentList "-NoExit", "-Command", "Write-Host '--- Chat Client 3 ---' -ForegroundColor Cyan; dotnet run --project ChatClient"
+
 
 Write-Host "--- System erfolgreich gestartet! ---" -ForegroundColor Green
