@@ -5,7 +5,6 @@ using Terminal.Gui;
 using ChatClient.Infrastructure;
 using ChatClient.Services;
 using Microsoft.Extensions.Configuration;
-using System.Runtime.CompilerServices;
 
 namespace ChatClient;
 
@@ -75,10 +74,10 @@ public class ChatLogic
         _appendMessageCallback = appendMessageCallback;
         _showFileDialogCallback = showFileDialogCallback;
         _uiInvoker = new UiInvoker(_appendMessageCallback, HandleBusError);
-        _busPublisher = new BusPublisher(_appendMessageCallback, HandleBusError);
+        _busPublisher = new BusPublisher(_appendMessageCallback, HandleBusError, EnsureServerIsReachable);
 
         // instantiate services
-        _messageService = new MessageService(_bus, _busPublisher, _appendMessageCallback, Username);
+        _messageService = new MessageService(_bus, _busPublisher, _appendMessageCallback, Username, EnsureServerIsReachable);
         _privateMessageService = new PrivateMessageService(_bus, _busPublisher, _appendMessageCallback, Username);
         _fileService = new FileService(_bus, _busPublisher, _appendMessageCallback, Username);
         _heartbeatService = new HeartbeatService(_bus, _configuration, _busPublisher, Username);
@@ -218,30 +217,22 @@ public class ChatLogic
     /// This method uses the <see cref="ServerReachable"/> property to determine the server status.
     /// If the server is offline, it notifies the user via the UI callback and blocks further requests.
     /// </remarks>
-    private bool EnsureServerReachable()
+    private bool EnsureServerIsReachable()
     {
         if (!ServerReachable)
         {
-            _appendMessageCallback("[ERROR] Either the server or RabbitMQ are offline.", "Red");
             return false;
         }
         return true;
     }
 
     /// <summary>
-    /// Centralized error handling for messaging- and UI-related failures.
-    /// Prevents client crashes caused by RabbitMQ disconnects or UI exceptions.
+    /// Handles a message bus connection error by marking the server as unreachable.
+    /// This resets the last successful heartbeat timestamp so that subsequent
+    /// operations can detect the connection loss and react accordingly.
     /// </summary>
     private void HandleBusError()
     {
         _lastServerHeartbeat = DateTime.MinValue;
-
-        Application.MainLoop.Invoke(() =>
-        {
-            _appendMessageCallback(
-                $"[ERROR] Connection problem. Maybe RabbitMQ is down?",
-                "Red"
-            );
-        });
     }
 }

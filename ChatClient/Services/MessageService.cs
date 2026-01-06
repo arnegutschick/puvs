@@ -1,7 +1,6 @@
 using Chat.Contracts;
 using EasyNetQ;
 using ChatClient.Infrastructure;
-using Microsoft.Extensions.Configuration;
 
 namespace ChatClient.Services
 {
@@ -15,6 +14,7 @@ namespace ChatClient.Services
         private readonly BusPublisher _busPublisher;
         private readonly Action<string, string> _appendMessage;
         private readonly string _username;
+        private readonly Func<bool> _isServerReachable;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="MessageService"/> class.
@@ -23,12 +23,19 @@ namespace ChatClient.Services
         /// <param name="busPublisher">Helper for error-safe publish operations.</param>
         /// <param name="appendMessage">Callback to append responses to the UI.</param>
         /// <param name="username">The current user's username.</param>
-        public MessageService(IBus bus, BusPublisher busPublisher, Action<string, string> appendMessage, string username)
+        /// /// <param name="isServerReachable">
+        /// Delegate that returns <c>true</c> if the chat server and message bus
+        /// are currently considered reachable, or <c>false</c> otherwise.
+        /// This is used as a precondition check before attempting publish operations
+        /// to avoid unnecessary failures when the server or RabbitMQ are offline.
+        /// </param>
+        public MessageService(IBus bus, BusPublisher busPublisher, Action<string, string> appendMessage, string username, Func<bool> isServerReachable)
         {
             _bus = bus;
             _busPublisher = busPublisher;
             _appendMessage = appendMessage;
             _username = username;
+            _isServerReachable = isServerReachable;
         }
 
         /// <summary>
@@ -54,6 +61,11 @@ namespace ChatClient.Services
         /// <returns>A task representing the asynchronous RPC request.</returns>
         public async Task HandleTimeCommandAsync()
         {
+            if (!_isServerReachable())
+            {
+                return;
+            }
+
             var res = await _bus.Rpc.RequestAsync<TimeRequest, TimeResponse>(new TimeRequest(_username));
             if (res.IsSuccess)
             {
@@ -67,6 +79,11 @@ namespace ChatClient.Services
         /// <returns>A task representing the asynchronous RPC request.</returns>
         public async Task HandleUsersCommandAsync()
         {
+            if (!_isServerReachable())
+            {
+                return;
+            }
+
             var res = await _bus.Rpc.RequestAsync<UserListRequest, UserListResponse>(new UserListRequest(_username));
             if (res.IsSuccess)
             {
@@ -85,6 +102,11 @@ namespace ChatClient.Services
         /// <returns>A task representing the asynchronous RPC request.</returns>
         public async Task HandleStatisticsCommandAsync()
         {
+            if (!_isServerReachable())
+            {
+                return;
+            }
+            
             var res = await _bus.Rpc.RequestAsync<StatisticsRequest, StatisticsResponse>(new StatisticsRequest(_username));
             if (res.IsSuccess)
             {

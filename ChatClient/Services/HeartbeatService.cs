@@ -41,7 +41,7 @@ namespace ChatClient.Services
 
             _timer = new Timer(async _ =>
             {
-                await _busPublisher.TryPublishAsync(() => _bus.PubSub.PublishAsync(new ClientHeatbeat(_username)));
+                await _busPublisher.TryPublishAsync(() => _bus.PubSub.PublishAsync(new ClientHeatbeat(_username)), true);
             }, null, TimeSpan.Zero, TimeSpan.FromSeconds(intervalSeconds));
         }
 
