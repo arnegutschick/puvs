@@ -44,12 +44,10 @@ public class UserService
     /// <summary>
     /// Handles a login request.
     /// Validates the username, assigns a color, and adds the user to the active collection.
-    /// Publishes a <see cref="UserNotification"/> to inform all clients about the new user.
     /// </summary>
     /// <param name="request">Login request containing the username.</param>
-    /// <param name="bus">Message bus for publishing notifications.</param>
     /// <returns>A <see cref="LoginResponse"/> indicating success or failure.</returns>
-    public async Task<LoginResponse> HandleLoginAsync(LoginRequest request, IBus bus)
+    public LoginResponse HandleLogin(LoginRequest request)
     {
         string username = request.Username?.Trim() ?? string.Empty;
         Console.WriteLine($"Login request for user: '{username}'");
@@ -73,28 +71,7 @@ public class UserService
 
         Console.WriteLine($"User '{username}' logged in successfully with color '{assignedColor}'.");
 
-        // --- Notify other users ---
-        await bus.PubSub.PublishAsync(new UserNotification($"User '{username}' has joined the chat."));
-
         return new LoginResponse(true, string.Empty);
-    }
-
-
-    /// <summary>
-    /// Handles a logout request.
-    /// Removes the user from the active collection and publishes a <see cref="UserNotification"/>.
-    /// </summary>
-    /// <param name="request">Logout request containing the username.</param>
-    /// <param name="bus">Message bus for publishing notifications.</param>
-    public async Task HandleLogoutAsync(LogoutRequest request, IBus bus)
-    {
-        if (_users.TryRemove(request.Username, out _))
-        {
-            Console.WriteLine($"User '{request.Username}' logged out.");
-            await bus.PubSub.PublishAsync(new UserNotification(
-                $"User '{request.Username}' has left the chat."
-            ));
-        }
     }
 
 
@@ -132,7 +109,7 @@ public class UserService
     /// </summary>
     /// <param name="username">The username to remove.</param>
     /// <returns>True if the user was removed, false otherwise.</returns>
-    public bool Remove(string username)
+    public bool RemoveUser(string username)
     {
         return _users.TryRemove(username, out _);
     }

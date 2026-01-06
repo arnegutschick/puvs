@@ -9,7 +9,7 @@ namespace ChatServer.Handlers;
 /// Handler for user-related events, including login and logout.
 /// Registers RPC and Pub/Sub handlers that delegate work to <see cref="UserService"/>.
 /// </summary>
-public class UserHandler : BaseHandler
+public class UserHandler : CommandExecutionWrapper
 {
     private readonly UserService _service;
 
@@ -76,7 +76,7 @@ public class UserHandler : BaseHandler
 
             return ExecuteRpcAsync(
                 request.Username,
-                async () => await _service.HandleLoginAsync(request, Bus),
+                () => Task.FromResult(_service.HandleLogin(request)),
                 defaultResponse: new LoginResponse(false, "Login failed due to server error"),
                 errorMessage: "Login failed. Please try again."
             );
@@ -103,7 +103,11 @@ public class UserHandler : BaseHandler
 
                 return ExecuteCommandAsync(
                     request.Username,
-                    () => _service.HandleLogoutAsync(request, Bus),
+                    () => 
+                    {
+                        _service.RemoveUser(request.Username);
+                        return Task.CompletedTask;
+                    },
                     errorMessage: "Logout failed. Please try again."
                 );
             }

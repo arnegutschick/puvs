@@ -10,7 +10,7 @@ namespace ChatServer.Handlers;
 /// Subscribes to <see cref="SendFileCommand"/> events and delegates
 /// handling to <see cref="FileService"/> to broadcast files to all clients.
 /// </summary>
-public class FileHandler : BaseHandler
+public class FileHandler : CommandExecutionWrapper
 {
     private readonly FileService _service;
 
@@ -53,10 +53,12 @@ public class FileHandler : BaseHandler
 
 
     /// <summary>
-    /// Handles an incoming <see cref="SendFileCommand"/> by delegating it
-    /// to <see cref="FileService.HandleAsync"/>.
+    /// Handles an incoming <see cref="SendFileCommand"/> asynchronously.
+    /// - Processes the file and publishes a <see cref="BroadcastFileEvent"/> via the message bus
+    /// - Uses <see cref="ExecuteCommandAsync"/> to handle errors and execution context
     /// </summary>
-    /// <param name="command">The file command containing sender, file name, content, and size.</param>
+    /// <param name="command">The <see cref="SendFileCommand"/> containing the sender, file name, content, and file size.</param>
+    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
     private Task HandleAsync(SendFileCommand command)
     {
         if (command == null)
@@ -67,7 +69,12 @@ public class FileHandler : BaseHandler
 
         return ExecuteCommandAsync(
             username: command.SenderUsername,
-            handlerAction: () => _service.HandleAsync(command),
+            handlerAction: async () =>
+            {
+                // Delegate command processing to service
+                BroadcastFileEvent fileEvent = _service.ProcessFile(command);
+                await Bus.PubSub.PublishAsync(fileEvent);
+            },
             errorMessage: $"Failed to send file '{command.FileName}'. Please try again."
         );
     }

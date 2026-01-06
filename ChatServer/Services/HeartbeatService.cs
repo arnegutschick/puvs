@@ -99,7 +99,7 @@ public class HeartbeatService
                 {
                     try
                     {
-                        if (_users.Remove(username))
+                        if (_users.RemoveUser(username))
                         {
                             Console.WriteLine($"User '{username}' has timed out.");
 

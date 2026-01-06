@@ -1,50 +1,48 @@
 using Chat.Contracts;
-using EasyNetQ;
 using System.Collections.Concurrent;
 
 namespace ChatServer.Services;
 
 /// <summary>
-/// Service responsible for handling broadcast messages from clients.
-/// Updates statistics and publishes the messages to all connected clients via Pub/Sub.
+/// Handles broadcast messages from clients.
+/// Trims, normalizes, and processes messages, updates statistics, 
+/// determines user display color, and creates a broadcast message event.
 /// </summary>
 public class MessageService
 {
-    private readonly IBus _bus;
     private readonly ConcurrentDictionary<string, UserInfo> _users;
     private readonly StatisticsService _stats;
 
     /// <summary>
-    /// Initializes the MessageService with a message bus, user dictionary, and statistics service.
+    /// Initializes the <see cref="MessageService"/> with a dictionary of users and a statistics service.
     /// </summary>
-    /// <param name="bus">The EasyNetQ message bus for publishing broadcast events.</param>
     /// <param name="users">Thread-safe dictionary of currently connected users.</param>
     /// <param name="stats">Service responsible for tracking message statistics.</param>
     public MessageService(
-        IBus bus,
         ConcurrentDictionary<string, UserInfo> users,
         StatisticsService stats)
     {
-        _bus = bus;
         _users = users;
         _stats = stats;
     }
 
 
     /// <summary>
-    /// Handles an incoming message from a client.
-    /// - Trims whitespace
+    /// Processes an incoming client message.
+    /// - Trims and normalizes the message text
     /// - Records the message in statistics if it is not a command (does not start with '/')
-    /// - Determines the user's display color
-    /// - Broadcasts the message to all clients
+    /// - Determines the user's display color (defaults to Black if unknown)
+    /// - Creates a <see cref="BroadcastMessageEvent"/> for further handling
     /// </summary>
-    /// <param name="command">The <see cref="SubmitMessageCommand"/> containing the username and text.</param>
-    public async Task HandleAsync(SubmitMessageCommand command)
+    /// <param name="command">The <see cref="SubmitMessageCommand"/> containing the sender and message text.</param>
+    /// <returns>
+    /// A <see cref="BroadcastMessageEvent"/> containing the sender, the normalized message text, and the user's display color.
+    /// </returns>
+    public BroadcastMessageEvent ProcessMessage(SubmitMessageCommand command)
     {
         if (command == null)
         {
-            Console.WriteLine("[WARNING] Received null SubmitMessageCommand");
-            return;
+            throw new ArgumentException("Received null SubmitMessageCommand");
         }
 
         Console.WriteLine(
@@ -64,15 +62,12 @@ public class MessageService
             : "Black";
 
         // --- Create broadcast event ---
-        var evt = new BroadcastMessageEvent(
+        var messageEvent = new BroadcastMessageEvent(
             command.SenderUsername,
             text,
             color
         );
 
-        // --- Publish to all subscribers ---
-        await _bus.PubSub.PublishAsync(evt);
-
-        Console.WriteLine("Broadcasted message to all clients.");
+        return messageEvent;
     }
 }
