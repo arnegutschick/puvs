@@ -82,13 +82,32 @@ Jeder Client wird nach einem Benutzernamen fragen.
 ## 3. Test-Szenario
 
 1. **Server starten:** Führen Sie den Server wie oben beschrieben aus.
-
 2. **Client A starten:** Starten Sie den ersten Client und geben Sie den Namen `Anton` ein.
 3. **Client B starten:** Starten Sie einen zweiten Client und geben Sie den Namen `Berta` ein.
-    * *Erwartung:* Im Terminal von Client A erscheint die Nachricht, dass `Berta` den Chat betreten hat. Im Terminal von Client B erscheint, dass `Anton` bereits im Chat ist (sofern die Implementierung dies unterstützt - die Basisimplementierung sendet nur eine "joined" Nachricht).
-4. **Nachricht senden:** Geben Sie im Terminal von Client A `Hallo Welt!` ein und drücken Sie Enter.
-    * *Erwartung:* Die Nachricht `Anton: Hallo Welt!` erscheint im Terminal von Client B.
-5. **Client verlassen:** Geben Sie im Terminal von Client B `/quit` ein und drücken Sie Enter.
-    * *Erwartung:* Im Terminal von Client A erscheint die Nachricht, dass `Berta` den Chat verlassen hat.
+    * *Erwartung:* Im Chat von Client A erscheint die Nachricht, dass Berta den Chat betreten hat. Im Chat von Client B erscheint eine Nachricht, die die Liste an eingeloggten Benutzern enthält.
+4. **Client C starten:** Starten Sie einen dritten Client und geben Sie den Namen `Tobias` ein.
+    * *Erwartung:* Es wird eine Chatinteraktion analog zu Schritt 3 erwartet.
+5. **Nachricht senden:** Geben Sie im Terminal von Client A `Hallo Welt!` ein und drücken Sie Enter.
+    * *Erwartung:* Die Nachricht `Anton: Hallo Welt!` erscheint im Chat von Client B und Client C.
+6. **Private Nachricht senden**: Mit dem Befehl `/msg Berta Hallo Berta!` kann Client A eine private Nachricht an Client B schicken.
+    * *Erwartung:* Die Nachricht `Hallo Berta!` erscheint im Chat von Client B, jedoch nicht im Chat von Client C.
+7. **Uhrzeit abfragen:** Mit dem Befehl `/time` kann Client C die aktuelle Uhrzeit vom Server abfragen.
+    * *Erwartung:* Die Info-Nachricht mit der aktuellen Uhrzeit des Servers erscheint im Chat von Client C.
+8. **Befehlsliste abrufen:** Mit dem Befehl `/help` kann Client B eine Liste der verfügbaren Befehle abrufen.
+    * *Erwartung:* Die Info-Nachricht mit den verfügbaren Befehlen wird im Chat von Client B angezeigt.
+9. **Statistiken abrufen:** Mit dem Befehl `/stats` kann Client A die aktuellen Chat-Statistiken abrufen.
+    * *Erwartung:* Die Info-Nachricht mit der Anzahl der gesendeten Nachrichten, dem Durchschnitt pro Client und den Top 3 Chattern erscheint im Chat von Client A.
+10. **Datei versenden:** Mit dem Befehl `/sendfile <Dateipfad>` kann Client C eine Datei an die anderen Nutzer verschicken.
+    * *Erwartung:* In Client A und B öffnet sich ein Dialog, über den die Nutzer die verschickte Datei herunterladen und speichern können.
+11. **Client verlassen:** Geben Sie im Terminal von Client A `/quit` ein und drücken Sie Enter.
+    * *Erwartung:* Im Chat von Client B und C erscheint die Nachricht, dass `Anton` den Chat verlassen hat.
+12. **Userliste anzeigen:** Mit dem Befehl `/users` kann Client B die aktuell eingeloggten User abrufen.
+    * *Erwartung:* Da Client A den Chat verlassen hat, erscheint eine Info-Nachricht, dass nur noch Berta und Tobias angemeldet sind.
 
-Damit ist die Funktionalität der Basis-Anwendung vollständig getestet.
+Damit ist die grundsätzliche Funktionalität der Anwendung gezeigt. Zusätzlich kann getestet werden, wie sich das System bei Fehlern, bspw.
+- der Nutzung falscher Befehle,
+- dem Senden von Privatnachrichten an den eigenen Client,
+- dem Verschicken von zu großen Dateien (> 1MB)
+- oder der Kommunikation bei abgestürztem Server / RabbitMQ-Bus
+
+verhält.
