@@ -10,9 +10,8 @@ namespace ChatServer.Handlers;
 /// Subscribes to <see cref="SendFileCommand"/> events and delegates
 /// handling to <see cref="FileService"/> to broadcast files to all clients.
 /// </summary>
-public class FileHandler
+public class FileHandler : BaseHandler
 {
-    private readonly IBus _bus;
     private readonly FileService _service;
 
     // Subscription ID for file transfer commands
@@ -24,8 +23,8 @@ public class FileHandler
     /// <param name="bus">The EasyNetQ message bus for Pub/Sub communication.</param>
     /// <param name="service">The service responsible for handling file transfers.</param>
     public FileHandler(IBus bus, FileService service)
+        : base(bus)
     {
-        _bus = bus;
         _service = service;
     }
     
@@ -40,7 +39,7 @@ public class FileHandler
         try
         {
             // Subscribe to file transfer events
-            await _bus.PubSub.SubscribeAsync<SendFileCommand>(
+            await Bus.PubSub.SubscribeAsync<SendFileCommand>(
                 SubscriptionId,
                 HandleAsync
             );
@@ -48,6 +47,7 @@ public class FileHandler
         catch (Exception)
         {
             Console.WriteLine($"[ERROR] Failed to subscribe to client filesend events. Maybe RabbitMQ is down?");
+            throw;
         }
     }
 
@@ -57,38 +57,18 @@ public class FileHandler
     /// to <see cref="FileService.HandleAsync"/>.
     /// </summary>
     /// <param name="command">The file command containing sender, file name, content, and size.</param>
-    private async Task HandleAsync(SendFileCommand command)
+    private Task HandleAsync(SendFileCommand command)
     {
         if (command == null)
         {
             Console.WriteLine("[WARNING] Received null SendFileCommand");
-            return;
+            return Task.CompletedTask;
         }
 
-        try
-        {
-            // Delegate file processing to the service
-            await _service.HandleAsync(command);
-        }
-        catch (Exception)
-        {
-            // Log the error on the server
-            Console.WriteLine(
-                $"[ERROR] Failed to process file from '{command.SenderUsername}' " +
-                $"('{command.FileName}', {command.FileSizeBytes} bytes)."
-            );
-
-            // Notify the sender client about the failure
-            try
-            {
-                string senderTopic = TopicNames.CreatePrivateUserTopicName(command.SenderUsername);
-                var errorEvent = new ErrorEvent($"Failed to send file '{command.FileName}'. Please try again.");
-                await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
-            }
-            catch (Exception innerEx)
-            {
-                Console.Error.WriteLine($"[ERROR] Failed to send ErrorEvent to '{command.SenderUsername}': {innerEx}");
-            }
-        }
+        return ExecuteCommandAsync(
+            username: command.SenderUsername,
+            handlerAction: () => _service.HandleAsync(command),
+            errorMessage: $"Failed to send file '{command.FileName}'. Please try again."
+        );
     }
 }

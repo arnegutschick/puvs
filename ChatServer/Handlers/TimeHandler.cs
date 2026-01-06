@@ -37,6 +37,7 @@ public class TimeHandler
         catch (Exception)
         {
             Console.WriteLine($"[ERROR] Failed to start TimeHandler RPC. Maybe RabbitMQ is down?");
+            throw;
         }
     }
 

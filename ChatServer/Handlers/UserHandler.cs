@@ -9,9 +9,8 @@ namespace ChatServer.Handlers;
 /// Handler for user-related events, including login and logout.
 /// Registers RPC and Pub/Sub handlers that delegate work to <see cref="UserService"/>.
 /// </summary>
-public class UserHandler
+public class UserHandler : BaseHandler
 {
-    private readonly IBus _bus;
     private readonly UserService _service;
 
     // Subscription ID for logout events
@@ -23,8 +22,8 @@ public class UserHandler
     /// <param name="bus">The EasyNetQ message bus for RPC and Pub/Sub communication.</param>
     /// <param name="service">The UserService responsible for managing user state.</param>
     public UserHandler(IBus bus, UserService service)
+        : base(bus)
     {
-        _bus = bus;
         _service = service;
     }
 
@@ -35,31 +34,27 @@ public class UserHandler
     /// <returns>A <see cref="Task"/> representing the asynchronous subscription registration.</returns>
     public async Task StartAsync()
     {
-        try
-        {
-            await StartLogin();
-        }
-        catch (Exception)
-        {
-            Console.WriteLine($"[CRITICAL] Failed to start login RPC. Maybe RabbitMQ is down?");
-        }
+        await SafeStartAsync(StartLogin, "login RPC");
+        await SafeStartAsync(StartLogout, "logout RPC");
+        await SafeStartAsync(StartUserListRpc, "user list RPC");
+    }
 
-        try
-        {
-            await StartLogout();
-        }
-        catch (Exception)
-        {
-            Console.WriteLine($"[CRITICAL] Failed to start logout RPC. Maybe RabbitMQ is down?");
-        }
 
+    /// <summary>
+    /// Executes a start function with standardized try/catch and critical logging.
+    /// </summary>
+    /// <param name="startFunc">The start function to execute asynchronously.</param>
+    /// <param name="description">Description for logging (e.g., "login RPC").</param>
+    private async Task SafeStartAsync(Func<Task> startFunc, string description)
+    {
         try
         {
-            await StartUserListRpc();
+            await startFunc();
         }
         catch (Exception)
         {
-            Console.WriteLine($"[CRITICAL] Failed to start user list RPC. Maybe RabbitMQ is down?");
+            Console.WriteLine($"[CRITICAL] Failed to start {description}. Maybe RabbitMQ is down?");
+            throw;
         }
     }
 
@@ -69,38 +64,22 @@ public class UserHandler
     /// Delegates handling to <see cref="UserService.HandleLoginAsync"/>.
     /// </summary>
     /// <returns>A <see cref="Task"/> representing the asynchronous subscription registration.</returns>
-    private async Task StartLogin()
+    private Task StartLogin()
     {
-        await _bus.Rpc.RespondAsync<LoginRequest, LoginResponse>(async request =>
+        return Bus.Rpc.RespondAsync<LoginRequest, LoginResponse>(request =>
         {
             if (request == null)
             {
                 Console.WriteLine("[WARNING] Received null LoginRequest");
-                return new LoginResponse(false, "Invalid request");
+                return Task.FromResult(new LoginResponse(false, "Invalid request"));
             }
 
-            try
-            {
-                return await _service.HandleLoginAsync(request, _bus);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ERROR] Failed to process login for '{request.Username}': {ex.Message}");
-
-                // Notify the client about the failure
-                try
-                {
-                    string senderTopic = TopicNames.CreatePrivateUserTopicName(request.Username);
-                    var errorEvent = new ErrorEvent($"Login failed. Please try again.");
-                    await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
-                }
-                catch (Exception innerEx)
-                {
-                    Console.Error.WriteLine($"[ERROR] Failed to send ErrorEvent to '{request.Username}': {innerEx}");
-                }
-
-                return new LoginResponse(false, "Login failed due to server error");
-            }
+            return ExecuteRpcAsync(
+                request.Username,
+                async () => await _service.HandleLoginAsync(request, Bus),
+                defaultResponse: new LoginResponse(false, "Login failed due to server error"),
+                errorMessage: "Login failed. Please try again."
+            );
         });
     }
 
@@ -110,38 +89,23 @@ public class UserHandler
     /// Delegates handling to <see cref="UserService.HandleLogoutAsync"/>.
     /// </summary>
     /// <returns>A <see cref="Task"/> representing the asynchronous subscription registration.</returns>
-    private async Task StartLogout()
+    private Task StartLogout()
     {
-        await _bus.PubSub.SubscribeAsync<LogoutRequest>(
+        return Bus.PubSub.SubscribeAsync<LogoutRequest>(
             LogoutSubscriptionId,
-            async request =>
+            request =>
             {
                 if (request == null)
                 {
                     Console.WriteLine("[WARNING] Received null LogoutRequest");
-                    return;
+                    return Task.CompletedTask;
                 }
 
-                try
-                {
-                    await _service.HandleLogoutAsync(request, _bus);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[ERROR] Failed to process logout for '{request.Username}': {ex.Message}");
-
-                    // Notify the client about the failure
-                    try
-                    {
-                        string senderTopic = TopicNames.CreatePrivateUserTopicName(request.Username);
-                        var errorEvent = new ErrorEvent($"Logout failed. Please try again.");
-                        await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
-                    }
-                    catch (Exception innerEx)
-                    {
-                        Console.Error.WriteLine($"[ERROR] Failed to send ErrorEvent to '{request.Username}': {innerEx}");
-                    }
-                }
+                return ExecuteCommandAsync(
+                    request.Username,
+                    () => _service.HandleLogoutAsync(request, Bus),
+                    errorMessage: "Logout failed. Please try again."
+                );
             }
         );
     }
@@ -152,40 +116,27 @@ public class UserHandler
     /// Delegates to <see cref="UserService.GetActiveUsers"/> to retrieve the current list of active users.
     /// </summary>
     /// <returns>A <see cref="Task"/> representing the asynchronous subscription registration.</returns>
-    private async Task StartUserListRpc()
+    private Task StartUserListRpc()
     {
-        await _bus.Rpc.RespondAsync<UserListRequest, UserListResponse>(async request =>
+        return Bus.Rpc.RespondAsync<UserListRequest, UserListResponse>(request =>
         {
             if (request == null)
             {
                 Console.WriteLine("[WARNING] Received null UserListRequest");
-                return new UserListResponse(false, Array.Empty<string>());
+                return Task.FromResult(new UserListResponse(false, Array.Empty<string>()));
             }
 
-            try
-            {
-                // Retrieve active users from the service
-                var users = _service.GetActiveUsers();
-                return new UserListResponse(true, users);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[ERROR] Failed to process UserListRequest: {ex.Message}");
-
-                // Notify the client about the failure
-                try
+            return ExecuteRpcAsync(
+                username: request.SenderUsername,
+                handlerAction: async () =>
                 {
-                    string senderTopic = TopicNames.CreatePrivateUserTopicName(request.SenderUsername);
-                    var errorEvent = new ErrorEvent($"Failed to retrieve user list. Please try again.");
-                    await _bus.PubSub.PublishAsync(errorEvent, senderTopic);
-                }
-                catch (Exception innerEx)
-                {
-                    Console.WriteLine($"[ERROR] Failed to send ErrorEvent to '{request.SenderUsername}': {innerEx}");
-                }
-
-                return new UserListResponse(false, Array.Empty<string>());
-            }
+                    // Retrieve active users from the service
+                    var users = _service.GetActiveUsers();
+                    return new UserListResponse(true, users);
+                },
+                defaultResponse: new UserListResponse(false, Array.Empty<string>()),
+                errorMessage: "Failed to retrieve user list. Please try again."
+            );
         });
     }
 }

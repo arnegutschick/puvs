@@ -48,6 +48,7 @@ public class HeartbeatHandler
         catch (Exception)
         {
             Console.WriteLine($"[ERROR] Failed to subscribe to client heartbeat. Maybe RabbitMQ is down?");
+            throw;
         }
     }
     
