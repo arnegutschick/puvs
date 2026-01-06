@@ -1,6 +1,5 @@
 using Chat.Contracts.Infrastructure;
 using EasyNetQ;
-using EasyNetQ.Topology;
 using Microsoft.Extensions.Configuration;
 
 namespace ChatClient;
@@ -24,38 +23,30 @@ internal static class Program
             // Get RabbitMQ host from configuration (default: localhost)
             string rabbitHost = configuration.GetValue<string>("RabbitMQ:Host") ?? "localhost";
             // Create EasyNetQ bus instance for Pub/Sub and RPC
-            IBus bus = RabbitMqBusFactory.Create($"host={rabbitHost}");
+            using IBus bus = await RabbitMqBusFactory.CreateAndValidateAsync($"host={rabbitHost}");
 
-            // RabbitMQ ping simulation: try to create a connection
-            try
-            {
-                var advancedBus = bus.Advanced;
-                var testExchange = await advancedBus.ExchangeDeclareAsync("ping_check", ExchangeType.Fanout);
-                await advancedBus.ExchangeDeleteAsync(testExchange);
-
-                // If no exception occurs the connection seems stable
-                Console.WriteLine($"Connected to RabbitMQ at {rabbitHost}.");
-            }
-            catch (Exception)
-            {
-                Console.WriteLine($"[ERROR] Cannot reach RabbitMQ at {rabbitHost}.");
-                Environment.Exit(1);
-            }
-
+            Console.WriteLine($"Connected to RabbitMQ at {rabbitHost}.");
 
             // --- User Login ---
             Console.Write("Enter username: ");
             string username = Console.ReadLine() ?? Guid.NewGuid().ToString();
 
             // Perform login via RPC call
-            var loginResponse = bus.Rpc.Request<Chat.Contracts.LoginRequest, Chat.Contracts.LoginResponse>(
-                new Chat.Contracts.LoginRequest(username)
-            );
-
-            if (!loginResponse.IsSuccess)
+            try
             {
-                Console.WriteLine($"Login failed: {loginResponse.Reason}");
-                return; // Exit program if login fails
+                var loginResponse = bus.Rpc.Request<Chat.Contracts.LoginRequest, Chat.Contracts.LoginResponse>(
+                    new Chat.Contracts.LoginRequest(username)
+                );
+                if (!loginResponse.IsSuccess)
+                {
+                    Console.WriteLine($"Login failed: {loginResponse.Reason}");
+                    return;
+                }
+            }
+            catch (Exception)
+            {
+                Console.WriteLine("[FATAL] Login request failed. Maybe RabbitMQ is down?");
+                return;
             }
 
             // --- Initialize UI and Logic ---
@@ -80,13 +71,27 @@ internal static class Program
 
             // --- Cleanup on Exit ---
             // Publish logout event to notify server
-            bus.PubSub.Publish(new Chat.Contracts.LogoutRequest(username));
+            try
+            {
+                bus.PubSub.Publish(new Chat.Contracts.LogoutRequest(username));
+            }
+            catch (Exception)
+            {
+                Console.WriteLine("[FATAL] Logout request failed. Is RabbitMQ down?");
+                return;
+            }
             // Dispose the bus to free resources
             bus.Dispose();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.WriteLine($"[FATAL] Client failed: {ex.Message}");
+            return;
         }
         catch (Exception)
         {
             Console.WriteLine($"[FATAL] Client failed.");
+            return;
         }
     }
 }
