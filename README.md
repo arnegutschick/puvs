@@ -1,10 +1,6 @@
-# Basis-Chat-Anwendung mit C#, RabbitMQ und EasyNetQ
+# Chat-Anwendung mit C#, RabbitMQ und EasyNetQ
 
-Dies ist eine einfache, konsolenbasierte Chat-Anwendung, die als Basis für die Semesterendarbeit im Kurs "Parallele und Verteilte Systeme" dient. Sie besteht aus einem zentralen `ChatServer` und beliebig vielen `ChatClient`-Instanzen.
-
-Die Kommunikation erfolgt asynchron über eine RabbitMQ-Message-Broker-Instanz und wird durch die .NET-Bibliothek `EasyNetQ` vereinfacht.
-
-> Die [Belegaufgabe](Belegaufgabe_2025.md) für dieses Semester finden Sie in der separaten Datei **"Belegaufgabe_2025.md"**.
+Diese einfache, konsolenbasierte Chat-Anwendung wurde im Rahmen der Semesterarbeit im Kurs *Parallele und Verteilte Systeme* an der Technischen Hochschule Wildau entwickelt. Sie besteht aus einem zentralen `ChatServer` sowie beliebig vielen `ChatClient`-Instanzen, die ähnlich wie in bekannten Messaging-Diensten wie WhatsApp die Kommunikation zwischen mehreren Clients auf einem Rechner ermöglichen.
 
 ## 1. Voraussetzungen: RabbitMQ
 
