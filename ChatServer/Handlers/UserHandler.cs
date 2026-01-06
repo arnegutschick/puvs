@@ -64,9 +64,9 @@ public class UserHandler : CommandExecutionWrapper
     /// Delegates handling to <see cref="UserService.HandleLoginAsync"/>.
     /// </summary>
     /// <returns>A <see cref="Task"/> representing the asynchronous subscription registration.</returns>
-    private Task StartLogin()
+    private async Task StartLogin()
     {
-        return Bus.Rpc.RespondAsync<LoginRequest, LoginResponse>(request =>
+        await Bus.Rpc.RespondAsync<LoginRequest, LoginResponse>(request =>
         {
             if (request == null)
             {
@@ -76,7 +76,7 @@ public class UserHandler : CommandExecutionWrapper
 
             return ExecuteRpcAsync(
                 request.Username,
-                () => Task.FromResult(_service.HandleLogin(request)),
+                () => Task.FromResult(_service.ProcessLoginRequest(request)),
                 defaultResponse: new LoginResponse(false, "Login failed due to server error"),
                 errorMessage: "Login failed. Please try again."
             );
@@ -89,9 +89,9 @@ public class UserHandler : CommandExecutionWrapper
     /// Delegates handling to <see cref="UserService.HandleLogoutAsync"/>.
     /// </summary>
     /// <returns>A <see cref="Task"/> representing the asynchronous subscription registration.</returns>
-    private Task StartLogout()
+    private async Task StartLogout()
     {
-        return Bus.PubSub.SubscribeAsync<LogoutRequest>(
+        await Bus.PubSub.SubscribeAsync<LogoutRequest>(
             LogoutSubscriptionId,
             request =>
             {
@@ -103,10 +103,11 @@ public class UserHandler : CommandExecutionWrapper
 
                 return ExecuteCommandAsync(
                     request.Username,
-                    () => 
+                    async () => 
                     {
                         _service.RemoveUser(request.Username);
-                        return Task.CompletedTask;
+                        await Bus.PubSub.PublishAsync(new UserNotification($"User {request.Username} has left the chat."));
+                        return;
                     },
                     errorMessage: "Logout failed. Please try again."
                 );
@@ -120,9 +121,9 @@ public class UserHandler : CommandExecutionWrapper
     /// Delegates to <see cref="UserService.GetActiveUsers"/> to retrieve the current list of active users.
     /// </summary>
     /// <returns>A <see cref="Task"/> representing the asynchronous subscription registration.</returns>
-    private Task StartUserListRpc()
+    private async Task StartUserListRpc()
     {
-        return Bus.Rpc.RespondAsync<UserListRequest, UserListResponse>(request =>
+        await Bus.Rpc.RespondAsync<UserListRequest, UserListResponse>(request =>
         {
             if (request == null)
             {

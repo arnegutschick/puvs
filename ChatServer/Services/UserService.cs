@@ -47,7 +47,7 @@ public class UserService
     /// </summary>
     /// <param name="request">Login request containing the username.</param>
     /// <returns>A <see cref="LoginResponse"/> indicating success or failure.</returns>
-    public LoginResponse HandleLogin(LoginRequest request)
+    public LoginResponse ProcessLoginRequest(LoginRequest request)
     {
         string username = request.Username?.Trim() ?? string.Empty;
         Console.WriteLine($"Login request for user: '{username}'");
