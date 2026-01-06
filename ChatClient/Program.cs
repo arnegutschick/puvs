@@ -34,7 +34,7 @@ internal static class Program
             // Perform login via RPC call
             try
             {
-                var loginResponse = bus.Rpc.Request<Chat.Contracts.LoginRequest, Chat.Contracts.LoginResponse>(
+                var loginResponse = await bus.Rpc.RequestAsync<Chat.Contracts.LoginRequest, Chat.Contracts.LoginResponse>(
                     new Chat.Contracts.LoginRequest(username)
                 );
                 if (!loginResponse.IsSuccess)
@@ -73,7 +73,7 @@ internal static class Program
             // Publish logout event to notify server
             try
             {
-                bus.PubSub.Publish(new Chat.Contracts.LogoutRequest(username));
+                await bus.PubSub.PublishAsync(new Chat.Contracts.LogoutRequest(username));
             }
             catch (Exception)
             {

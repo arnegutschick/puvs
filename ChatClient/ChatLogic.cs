@@ -2,19 +2,30 @@ using EasyNetQ;
 using Chat.Contracts;
 using Chat.Contracts.Infrastructure;
 using Terminal.Gui;
+using ChatClient.Infrastructure;
+using ChatClient.Services;
 using Microsoft.Extensions.Configuration;
+using System.Runtime.CompilerServices;
 
 namespace ChatClient;
 
 /// <summary>
-/// Encapsulates the core logic for the chat client.
-/// Handles sending and receiving messages, file transfers, private messages,
-/// user notifications, and periodic heartbeat messages.
+/// Orchestrates the core chat client logic by delegating to specialized services.
+/// Acts as a facade that coordinates message sending, file transfers, heartbeat management,
+/// and Pub/Sub event subscriptions through dependency-injected services.
 /// </summary>
 /// <remarks>
-/// This class interacts with a Pub/Sub bus (<see cref="IBus"/>)
-/// and updates the user interface via provided callbacks.
-/// It also manages commands such as /stats, /time, /sendfile, and private messaging.
+/// This class provides a simple public API for the UI layer, internally delegating to:
+/// <list type="bullet">
+/// <item><see cref="MessageService"/> for broadcast and RPC-based commands</item>
+/// <item><see cref="PrivateMessageService"/> for private messaging</item>
+/// <item><see cref="FileService"/> for file send/receive</item>
+/// <item><see cref="HeartbeatService"/> for server presence</item>
+/// <item><see cref="SubscriptionManager"/> for Pub/Sub event handling</item>
+/// <item><see cref="UiInvoker"/> for safe UI updates</item>
+/// <item><see cref="BusPublisher"/> for error-safe publish operations</item>
+/// </list>
+/// All methods preserve their original signatures for backward compatibility with the UI layer.
 /// </remarks>
 public class ChatLogic
 {
@@ -26,12 +37,16 @@ public class ChatLogic
     private readonly Func<BroadcastFileEvent, Dialog> _showFileDialogCallback;
     // Configuration settings
     private readonly IConfiguration _configuration;
-    // Timer for heartbeat messages
-    private Timer? _heartbeatTimer;
     // Current user's username
     internal string Username { get; }
     // Last registered heartbeat from the server 
     private DateTime _lastServerHeartbeat = DateTime.UtcNow;
+    private readonly UiInvoker _uiInvoker;
+    private readonly BusPublisher _busPublisher;
+    private readonly MessageService _messageService;
+    private readonly PrivateMessageService _privateMessageService;
+    private readonly FileService _fileService;
+    private readonly HeartbeatService _heartbeatService;
 
     // Calculates if the server is still online by comparing latest heartbeat with timeout value
     private bool ServerReachable =>
@@ -39,6 +54,14 @@ public class ChatLogic
         TimeSpan.FromSeconds(_configuration.GetValue("ChatSettings:HeartbeatTimeoutSeconds", 30));
 
     // Constructor
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ChatLogic"/> class with all required dependencies.
+    /// </summary>
+    /// <param name="bus">The Pub/Sub bus for message publishing and RPC requests.</param>
+    /// <param name="username">The current user's username.</param>
+    /// <param name="configuration">Configuration containing heartbeat and server reachability settings.</param>
+    /// <param name="appendMessageCallback">Callback to append messages to the UI chat view.</param>
+    /// <param name="showFileDialogCallback">Callback to show a file save dialog when files are received.</param>
     public ChatLogic(
         IBus bus,
         string username,
@@ -51,6 +74,14 @@ public class ChatLogic
         _configuration = configuration;
         _appendMessageCallback = appendMessageCallback;
         _showFileDialogCallback = showFileDialogCallback;
+        _uiInvoker = new UiInvoker(_appendMessageCallback, HandleBusError);
+        _busPublisher = new BusPublisher(_appendMessageCallback, HandleBusError);
+
+        // instantiate services
+        _messageService = new MessageService(_bus, _busPublisher, _appendMessageCallback, Username);
+        _privateMessageService = new PrivateMessageService(_bus, _busPublisher, _appendMessageCallback, Username);
+        _fileService = new FileService(_bus, _busPublisher, _appendMessageCallback, Username);
+        _heartbeatService = new HeartbeatService(_bus, _configuration, _busPublisher, Username);
     }
 
     /// <summary>
@@ -73,116 +104,17 @@ public class ChatLogic
     {
         string subscriptionId = $"chat_client_{Guid.NewGuid()}";
         string privateTopic = TopicNames.CreatePrivateUserTopicName(Username);
-
-        // --- Broadcast chat messages ---
-        _bus.PubSub.Subscribe<BroadcastMessageEvent>(subscriptionId, msg =>
-        {
-            try
-            {
-                Application.MainLoop.Invoke(() =>
-                {
-                    _appendMessageCallback($"{msg.Username}: {msg.Text}", msg.UserColor);
-                });
-            }
-            catch (Exception)
-            {
-                HandleBusError();
-            }
-        });
-
-        // --- User notifications ---
-        _bus.PubSub.Subscribe<UserNotification>(subscriptionId, note =>
-        {
-            try
-            {
-                Application.MainLoop.Invoke(() =>
-                {
-                    _appendMessageCallback($"[INFO] {note.Text}", "Black");
-                });
-            }
-            catch (Exception)
-            {
-                HandleBusError();
-            }
-        });
-
-        // --- File messages ---
-        _bus.PubSub.Subscribe<BroadcastFileEvent>(subscriptionId, file =>
-        {
-            if (file.Sender == Username) return;
-
-            try
-            {
-                Application.MainLoop.Invoke(() =>
-                {
-                    _appendMessageCallback(
-                        $"[FILE] {file.Sender}: {file.FileName} ({file.FileSizeBytes} bytes)",
-                        "BrightGreen"
-                    );
-
-                    var dialog = _showFileDialogCallback(file);
-                    Application.Run(dialog);
-                });
-            }
-            catch (Exception)
-            {
-                HandleBusError();
-            }
-        });
-
-        // --- Private messages (topic-based) ---
-        _bus.PubSub.Subscribe<PrivateMessageEvent>(
-            privateTopic,
-            privateMessage =>
-            {
-                try
-                {
-                    Application.MainLoop.Invoke(() =>
-                    {
-                        if (privateMessage.IsOutgoing)
-                        {
-                            _appendMessageCallback(
-                                $"[PRIVATE → {privateMessage.RecipientUsername}] {privateMessage.Text}",
-                                privateMessage.UserColor
-                            );
-                        }
-                        else
-                        {
-                            _appendMessageCallback(
-                                $"[PRIVATE ← {privateMessage.SenderUsername}] {privateMessage.Text}",
-                                privateMessage.UserColor
-                            );
-                        }
-                    });
-                }
-                catch (Exception)
-                {
-                    HandleBusError();
-                }
-            },
-            cfg => cfg.WithTopic(privateTopic)
+        // delegate subscriptions to SubscriptionManager
+        var subscriptionManager = new SubscriptionManager(
+            _bus,
+            Username,
+            _uiInvoker,
+            _showFileDialogCallback,
+            ts => _lastServerHeartbeat = ts,
+            _appendMessageCallback
         );
 
-        // --- Error Messages ---
-        _bus.PubSub.Subscribe<ErrorEvent>(
-            privateTopic,
-            error =>
-            {
-                Application.MainLoop.Invoke(() =>
-                {
-                    _appendMessageCallback($"[ERROR] {error.Message}", "Red");
-                });
-            },
-            cfg => cfg.WithTopic(privateTopic)
-        );
-
-        // --- Server Heartbeat ---
-        _bus.PubSub.Subscribe<ServerHeartbeat>(
-            $"client_heartbeat_{Username}",
-            hb =>
-            {
-                _lastServerHeartbeat = hb.Timestamp;
-            });
+        subscriptionManager.SubscribeAll();
     }
 
     /// <summary>
@@ -192,22 +124,7 @@ public class ChatLogic
     /// <param name="text">The message text to send.</param>
     public async Task SendMessageAsync(string text)
     {
-        text ??= "";
-        var trimmed = text.Trim();
-
-        if (string.IsNullOrWhiteSpace(trimmed))
-            return;
-
-        if (!EnsureServerReachable()) return;
-
-        try
-        {
-            _bus.PubSub.Publish(new SubmitMessageCommand(Username, text));
-        }
-        catch (Exception)
-        {
-            HandleBusError();
-        }
+        await _messageService.SendMessageAsync(text);
     }
 
     /// <summary>
@@ -218,24 +135,7 @@ public class ChatLogic
     /// <param name="text">The message content to send.</param>
     public async Task SendPrivateMessageAsync(string recipientUsername, string text)
     {
-        if (string.Equals(recipientUsername, Username, StringComparison.OrdinalIgnoreCase))
-        {
-            _appendMessageCallback("[ERROR] You cannot send a private message to yourself.", "Red");
-            return;
-        }
-
-        if (!EnsureServerReachable()) return;
-
-        try
-        {
-            _bus.PubSub.Publish(
-                new SendPrivateMessageCommand(Username, recipientUsername, text)
-            );
-        }
-        catch (Exception)
-        {
-            HandleBusError();
-        }
+        await _privateMessageService.SendPrivateMessageAsync(recipientUsername, text);
     }
 
     /// <summary>
@@ -245,26 +145,7 @@ public class ChatLogic
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task HandleTimeCommandAsync()
     {
-        if (!EnsureServerReachable()) return;
-
-        try
-        {
-            var res = await _bus.Rpc.RequestAsync<TimeRequest, TimeResponse>(
-                new TimeRequest(Username)
-            );
-
-            if (res.IsSuccess)
-            {
-                _appendMessageCallback(
-                    $"[INFO] Current server time: {res.CurrentTime}",
-                    "Black"
-                );
-            }
-        }
-        catch (Exception)
-        {
-            HandleBusError();
-        }
+        await _messageService.HandleTimeCommandAsync();
     }
 
     /// <summary>
@@ -274,30 +155,7 @@ public class ChatLogic
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task HandleUsersCommandAsync()
     {
-        if (!EnsureServerReachable()) return;
-
-        try
-        {
-            var res = await _bus.Rpc.RequestAsync<UserListRequest, UserListResponse>(
-                new UserListRequest(Username)
-            );
-
-            if (res.IsSuccess)
-            {
-                _appendMessageCallback($"=== Currently logged in users ===", "Black");
-
-                foreach (string user in res.UserList)
-                {
-                    _appendMessageCallback($"- {user}", "Black");
-                }
-
-                _appendMessageCallback($"==================================", "Black");
-            }
-        }
-        catch (Exception)
-        {
-            HandleBusError();
-        }
+        await _messageService.HandleUsersCommandAsync();
     }
 
     /// <summary>
@@ -307,42 +165,7 @@ public class ChatLogic
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task HandleStatisticsCommandAsync()
     {
-        if (!EnsureServerReachable()) return;
-
-        try
-        {
-            var res = await _bus.Rpc.RequestAsync<StatisticsRequest, StatisticsResponse>(
-                new StatisticsRequest(Username)
-            );
-
-            if (res.IsSuccess)
-            {
-                _appendMessageCallback("=== Statistics ===", "Black");
-                _appendMessageCallback($"Total Messages: {res.TotalMessages}", "Black");
-                _appendMessageCallback($"Ø Messages per User: {res.AvgMessagesPerUser:F2}", "Black");
-                _appendMessageCallback("Top 3 most active Chatters:", "Black");
-
-                if (res.Top3 == null || res.Top3.Count == 0)
-                {
-                    _appendMessageCallback("  (currently no data)", "Black");
-                }
-                else
-                {
-                    int rank = 1;
-                    foreach (var t in res.Top3)
-                    {
-                        _appendMessageCallback($"  {rank}. {t.User}: {t.MessageCount}", "Black");
-                        rank++;
-                    }
-                }
-
-                _appendMessageCallback("=================", "Black");
-            }
-        }
-        catch (Exception)
-        {
-            HandleBusError();
-        }
+        await _messageService.HandleStatisticsCommandAsync();
     }
 
     /// <summary>
@@ -353,41 +176,7 @@ public class ChatLogic
     /// <returns>A task representing the asynchronous send operation.</returns>
     public async Task HandleSendFileAsync(string path)
     {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            _appendMessageCallback("[ERROR] Invalid file path.", "Red");
-            return;
-        }
-
-        if (!File.Exists(path))
-        {
-            _appendMessageCallback("[ERROR] File does not exist.", "Red");
-            return;
-        }
-
-        var info = new FileInfo(path);
-
-        if (info.Length > 1_000_000)
-        {
-            _appendMessageCallback("[ERROR] File is too large (max 1 MB).", "Red");
-            return;
-        }
-
-        if (!EnsureServerReachable()) return;
-
-        try
-        {
-            byte[] bytes = await File.ReadAllBytesAsync(path);
-            string base64 = Convert.ToBase64String(bytes);
-
-            _bus.PubSub.Publish(new SendFileCommand(Username, info.Name, base64, info.Length));
-
-            _appendMessageCallback($"[YOU] Sent file {info.Name}", "BrightGreen");
-        }
-        catch (Exception)
-        {
-            HandleBusError();
-        }
+        await _fileService.HandleSendFileAsync(path);
     }
 
     /// <summary>
@@ -398,47 +187,15 @@ public class ChatLogic
     /// <returns>A task representing the asynchronous save operation.</returns>
     public async Task SaveFileAsync(BroadcastFileEvent file)
     {
-        try
-        {
-            byte[] data = Convert.FromBase64String(file.ContentBase64);
-
-            string dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                "Downloads",
-                "Chat"
-            );
-
-            Directory.CreateDirectory(dir);
-
-            string path = Path.Combine(dir, file.FileName);
-
-            await File.WriteAllBytesAsync(path, data);
-
-            _appendMessageCallback($"[SAVED] {path}", "BrightGreen");
-        }
-        catch (Exception)
-        {
-            HandleBusError();
-        }
+        await _fileService.SaveFileAsync(file);
     }
-
     /// <summary>
     /// Starts sending periodic heartbeat messages to the server to indicate that this client is still online.
     /// The heartbeat is sent using a timer and Pub/Sub on the bus. The time interval can be modified in the 'appsettings.json' file
     /// </summary>
-    public void StartClientHeartbeat()
+    public async Task StartClientHeartbeat()
     {
-        int intervalSeconds =
-            _configuration.GetValue("ChatSettings:ClientHeartbeatIntervalSeconds", 10);
-
-        _heartbeatTimer = new Timer(_ =>
-        {
-            try
-            {
-                _bus.PubSub.Publish(new ClientHeatbeat(Username));
-            }
-            catch (Exception) {}
-        }, null, TimeSpan.Zero, TimeSpan.FromSeconds(intervalSeconds));
+        await _heartbeatService.Start();
     }
 
     /// <summary>
@@ -447,7 +204,7 @@ public class ChatLogic
     /// </summary>
     public void StopClientHeartbeat()
     {
-        _heartbeatTimer?.Dispose();
+        _heartbeatService.Stop();
     }
 
     /// <summary>
