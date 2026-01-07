@@ -31,8 +31,10 @@ public class LoginService
     {
         try
         {
-            var response = await _bus.Rpc.RequestAsync<LoginRequest, LoginResponse>(new LoginRequest(username));
-            return response;
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var requestTask = _bus.Rpc.RequestAsync<LoginRequest, LoginResponse>(new LoginRequest(username));
+            var res = await requestTask.WaitAsync(cts.Token);
+            return res;
         }
         catch (Exception)
         {
@@ -53,7 +55,8 @@ public class LoginService
         {
             // Use a timeout to prevent blocking the main thread if RabbitMQ is unreachable
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await _bus.PubSub.PublishAsync(new LogoutRequest(username), cts.Token);
+            var requestTask = _bus.PubSub.PublishAsync(new LogoutRequest(username));
+            await requestTask.WaitAsync(cts.Token);
         }
         catch (Exception)
         {

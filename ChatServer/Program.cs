@@ -73,7 +73,7 @@ internal class Program
 
             // Periodically removes inactive users
             using var cts = new CancellationTokenSource();
-            _ = Task.Run(() => heartbeatService.StartCleanupTask(cts.Token));
+            var cleanupTask = Task.Run(() => heartbeatService.StartCleanupTask(cts.Token));
 
             Console.WriteLine("Server is running. Press [Enter] to exit.");
             Console.ReadLine();
@@ -86,7 +86,8 @@ internal class Program
             // Stop Server Heartbeat
             heartbeatService.StopServerHeartbeat();
 
-            bus.Dispose();
+            // Wait for cleanup task to finish
+            await cleanupTask; 
         }
         catch (InvalidOperationException ex)
         {
