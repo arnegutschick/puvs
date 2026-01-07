@@ -1,5 +1,6 @@
 using Chat.Contracts;
 using EasyNetQ;
+using Terminal.Gui;
 using ChatClient.Infrastructure;
 
 namespace ChatClient.Services
@@ -63,13 +64,28 @@ namespace ChatClient.Services
         {
             if (!_isServerReachable())
             {
+                Application.MainLoop.Invoke(() =>
+                {
+                    _appendMessage("[ERROR] Either the server or RabbitMQ are offline.", "Red");
+                });
                 return;
             }
-
-            var res = await _bus.Rpc.RequestAsync<TimeRequest, TimeResponse>(new TimeRequest(_username));
-            if (res.IsSuccess)
+            try
             {
-                _appendMessage($"[INFO] Current server time: {res.CurrentTime}", "Black");
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                var requestTask = _bus.Rpc.RequestAsync<TimeRequest, TimeResponse>(new TimeRequest(_username));
+                var res = await requestTask.WaitAsync(cts.Token);
+
+                if (res.IsSuccess)
+                    Application.MainLoop.Invoke(() => _appendMessage($"[INFO] Current server time: {res.CurrentTime}", "Black"));
+            }
+            catch (OperationCanceledException)
+            {
+                Application.MainLoop.Invoke(() => _appendMessage("[ERROR] Request timed out. Is RabbitMQ running?", "Red"));
+            }
+            catch (Exception)
+            {
+                Application.MainLoop.Invoke(() => _appendMessage($"[ERROR] Request failed.", "Red"));
             }
         }
 
@@ -81,18 +97,41 @@ namespace ChatClient.Services
         {
             if (!_isServerReachable())
             {
+                Application.MainLoop.Invoke(() =>
+                {
+                    _appendMessage("[ERROR] Either the server or RabbitMQ are offline.", "Red");
+                });
                 return;
             }
 
-            var res = await _bus.Rpc.RequestAsync<UserListRequest, UserListResponse>(new UserListRequest(_username));
-            if (res.IsSuccess)
+            try
             {
-                _appendMessage("=== Currently logged in users ===", "Black");
-                foreach (var user in res.UserList)
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                var requestTask = _bus.Rpc.RequestAsync<UserListRequest, UserListResponse>(
+                    new UserListRequest(_username)
+                );
+                var res = await requestTask.WaitAsync(cts.Token);
+
+                if (res.IsSuccess)
                 {
-                    _appendMessage($"- {user}", "Black");
+                    Application.MainLoop.Invoke(() =>
+                    {
+                        _appendMessage("=== Currently logged in users ===", "Black");
+                        foreach (var user in res.UserList)
+                        {
+                            _appendMessage($"- {user}", "Black");
+                        }
+                        _appendMessage("==================================", "Black");
+                    });
                 }
-                _appendMessage("==================================", "Black");
+            }
+            catch (OperationCanceledException)
+            {
+                Application.MainLoop.Invoke(() => _appendMessage("[ERROR] Request timed out. Is RabbitMQ running?", "Red"));
+            }
+            catch (Exception)
+            {
+                Application.MainLoop.Invoke(() => _appendMessage("[ERROR] Failed to fetch users.", "Red"));
             }
         }
 
@@ -104,30 +143,55 @@ namespace ChatClient.Services
         {
             if (!_isServerReachable())
             {
+                Application.MainLoop.Invoke(() =>
+                {
+                    _appendMessage("[ERROR] Either the server or RabbitMQ are offline.", "Red");
+                });
                 return;
             }
-            
-            var res = await _bus.Rpc.RequestAsync<StatisticsRequest, StatisticsResponse>(new StatisticsRequest(_username));
-            if (res.IsSuccess)
+
+            try
             {
-                _appendMessage("=== Statistics ===", "Black");
-                _appendMessage($"Total Messages: {res.TotalMessages}", "Black");
-                _appendMessage($"Ø Messages per User: {res.AvgMessagesPerUser:F2}", "Black");
-                _appendMessage("Top 3 most active Chatters:", "Black");
-                if (res.Top3 == null || res.Top3.Count == 0)
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                var requestTask = _bus.Rpc.RequestAsync<StatisticsRequest, StatisticsResponse>(
+                    new StatisticsRequest(_username)
+                );
+                var res = await requestTask.WaitAsync(cts.Token);
+
+                if (res.IsSuccess)
                 {
-                    _appendMessage("  (currently no data)", "Black");
-                }
-                else
-                {
-                    int rank = 1;
-                    foreach (var t in res.Top3)
+                    Application.MainLoop.Invoke(() =>
                     {
-                        _appendMessage($"  {rank}. {t.User}: {t.MessageCount}", "Black");
-                        rank++;
-                    }
+                        _appendMessage("=== Statistics ===", "Black");
+                        _appendMessage($"Total Messages: {res.TotalMessages}", "Black");
+                        _appendMessage($"Ø Messages per User: {res.AvgMessagesPerUser:F2}", "Black");
+                        _appendMessage("Top 3 most active Chatters:", "Black");
+
+                        if (res.Top3 == null || res.Top3.Count == 0)
+                        {
+                            _appendMessage("  (currently no data)", "Black");
+                        }
+                        else
+                        {
+                            int rank = 1;
+                            foreach (var t in res.Top3)
+                            {
+                                _appendMessage($"  {rank}. {t.User}: {t.MessageCount}", "Black");
+                                rank++;
+                            }
+                        }
+
+                        _appendMessage("=================", "Black");
+                    });
                 }
-                _appendMessage("=================", "Black");
+            }
+            catch (OperationCanceledException)
+            {
+                Application.MainLoop.Invoke(() => _appendMessage("[ERROR] Request timed out. Is RabbitMQ running?", "Red"));
+            }
+            catch (Exception)
+            {
+                Application.MainLoop.Invoke(() => _appendMessage("[ERROR] Failed to fetch statistics.", "Red"));
             }
         }
     }

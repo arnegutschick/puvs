@@ -71,7 +71,10 @@ public class BusPublisher
 
             if (!isHeartbeat)
             {
-                _appendMessage?.Invoke("[ERROR] Publish timed out. Maybe RabbitMQ is down?", "Red");
+                Application.MainLoop.Invoke(() =>
+                {
+                    _appendMessage("[ERROR] Connection problem. Maybe RabbitMQ is down?", "Red");
+                });
             }
         }
         catch (Exception)
@@ -80,10 +83,10 @@ public class BusPublisher
 
             if (!isHeartbeat)
             {
-                _appendMessage?.Invoke(
-                    "[ERROR] Connection problem. Maybe RabbitMQ is down?",
-                    "Red"
-                );
+                Application.MainLoop.Invoke(() =>
+                {
+                    _appendMessage("[ERROR] Connection problem. Maybe RabbitMQ is down?", "Red");
+                });
             }
         }
     }

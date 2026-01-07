@@ -1,5 +1,4 @@
 using Chat.Contracts;
-using EasyNetQ;
 using System.Collections.Concurrent;
 
 namespace ChatServer.Services;

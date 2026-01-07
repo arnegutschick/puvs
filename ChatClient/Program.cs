@@ -69,10 +69,19 @@ internal static class Program
 
             // --- Cleanup on Exit ---
             // Publish logout event to notify server via LoginService - using fire-and-forget to prevent UI freeze
-            _ = loginService.LogoutAsync(username);
+            // if this task fails, the server would register the timeout and perform a safe logout anyway
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await loginService.LogoutAsync(username);
+                }
+                catch (Exception)
+                {
+                    Console.WriteLine($"[WARNING] Logout failed.");
+                }
+            });
 
-            // Dispose the bus to free resources
-            bus.Dispose();
         }
         catch (InvalidOperationException ex)
         {
