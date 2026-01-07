@@ -52,54 +52,100 @@ public class SubscriptionManager
         string subscriptionId = $"chat_client_{Guid.NewGuid()}";
         string privateTopic = TopicNames.CreatePrivateUserTopicName(_username);
 
-        _bus.PubSub.Subscribe<BroadcastMessageEvent>(subscriptionId, msg =>
-        {
-            _uiInvoker.SafeInvoke(() => _appendMessage($"{msg.Username}: {msg.Text}", msg.UserColor));
-        });
+        // Receives public broadcast chat messages from all users
+        SafeSubscribe<BroadcastMessageEvent>(subscriptionId, msg =>
+            _uiInvoker.SafeInvoke(() =>
+                _appendMessage($"{msg.Username}: {msg.Text}", msg.UserColor))
+        );
 
-        _bus.PubSub.Subscribe<UserNotification>(subscriptionId, note =>
-        {
-            _uiInvoker.SafeInvoke(() => _appendMessage($"[INFO] {note.Text}", "Black"));
-        });
+        // Receives informational system notifications (e.g. user join/leave events)
+        SafeSubscribe<UserNotification>(subscriptionId, note =>
+            _uiInvoker.SafeInvoke(() =>
+                _appendMessage($"[INFO] {note.Text}", "Black"))
+        );
 
-        _bus.PubSub.Subscribe<BroadcastFileEvent>(subscriptionId, file =>
+        // Receives broadcast file announcements and prompts the user to save the file
+        SafeSubscribe<BroadcastFileEvent>(subscriptionId, file =>
         {
-            if (file.Sender == _username) return;
+            // Ignore files sent by the current user
+            if (file.Sender == _username)
+                return;
 
             _uiInvoker.SafeInvoke(() =>
             {
-                _appendMessage($"[FILE] {file.Sender}: {file.FileName} ({file.FileSizeBytes} bytes)", "BrightGreen");
+                _appendMessage(
+                    $"[FILE] {file.Sender}: {file.FileName} ({file.FileSizeBytes} bytes)",
+                    "BrightGreen");
 
                 var dialog = _showFileDialog(file);
                 Application.Run(dialog);
             });
         });
 
-        _bus.PubSub.Subscribe<PrivateMessageEvent>(
+        // Receives private messages sent to or from the current user (topic-filtered)
+        SafeSubscribe<PrivateMessageEvent>(
             privateTopic,
-            privateMessage =>
-            {
+            msg =>
                 _uiInvoker.SafeInvoke(() =>
                 {
-                    if (privateMessage.IsOutgoing)
-                    {
-                        _appendMessage($"[PRIVATE → {privateMessage.RecipientUsername}] {privateMessage.Text}", privateMessage.UserColor);
-                    }
-                    else
-                    {
-                        _appendMessage($"[PRIVATE ← {privateMessage.SenderUsername}] {privateMessage.Text}", privateMessage.UserColor);
-                    }
-                });
-            },
+                    var label = msg.IsOutgoing
+                        ? $"[PRIVATE → {msg.RecipientUsername}]"
+                        : $"[PRIVATE ← {msg.SenderUsername}]";
+
+                    _appendMessage($"{label} {msg.Text}", msg.UserColor);
+                }),
             cfg => cfg.WithTopic(privateTopic)
         );
 
-        _bus.PubSub.Subscribe<ErrorEvent>(
+        // Receives error events scoped to the current user (topic-filtered)
+        SafeSubscribe<ErrorEvent>(
             privateTopic,
-            error => _uiInvoker.SafeInvoke(() => _appendMessage($"[ERROR] {error.Message}", "Red")),
+            error =>
+                _uiInvoker.SafeInvoke(() =>
+                    _appendMessage($"[ERROR] {error.Message}", "Red")),
             cfg => cfg.WithTopic(privateTopic)
         );
 
-        _bus.PubSub.Subscribe<ServerHeartbeat>($"client_heartbeat_{_username}", hb => _updateHeartbeat(hb.Timestamp));
+        // Receives periodic server heartbeat events to track server availability
+        SafeSubscribe<ServerHeartbeat>(
+            $"client_heartbeat_{_username}",
+            hb => _updateHeartbeat(hb.Timestamp)
+        );
+    }
+
+
+
+    /// <summary>
+    /// Safely registers a Pub/Sub subscription for the specified message type.
+    /// </summary>
+    /// <typeparam name="T">
+    /// The message type to subscribe to.
+    /// </typeparam>
+    /// <param name="subscriptionId">
+    /// The EasyNetQ subscription identifier.
+    /// </param>
+    /// <param name="handler">
+    /// The message handler invoked for each received message.
+    /// The handler is expected to route all UI-related logic through <see cref="UiInvoker.SafeInvoke"/>.
+    /// </param>
+    /// <param name="configure">
+    /// Optional subscription configuration callback (e.g. topic filtering).
+    /// </param>
+    private void SafeSubscribe<T>(
+        string subscriptionId,
+        Action<T> handler,
+        Action<ISubscriptionConfiguration>? configure = null)
+    {
+        try
+        {
+            _bus.PubSub.Subscribe<T>(
+                subscriptionId,
+                message => handler(message),
+                cfg => configure?.Invoke(cfg));
+        }
+        catch (Exception)
+        {
+            _uiInvoker.SafeInvoke(() => _appendMessage($"[ERROR] Couldn't subscribe to {typeof(T).Name}.", "Red"));
+        }
     }
 }
